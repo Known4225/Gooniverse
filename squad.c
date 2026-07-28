@@ -1,94 +1,331 @@
-// #define TURTLE_IMPLEMENTATION
+/*
+Created by Ryan Sricha, 28.07.26
+
+TODO:
+- Color based on group
+- Algorithm to determine position of nodes (possibly multiple algorithms)
+*/
+
 #include "turtle.h"
 #include <time.h>
 
-void parseRibbonOutput() {
-    if (tt_ribbon.output[0] == 0) {
-        return;
-    }
-    tt_ribbon.output[0] = 0;
-    if (tt_ribbon.output[1] == 0) { // File
-        if (tt_ribbon.output[2] == 1) { // New
-            list_clear(osToolsFileDialog.selectedFilenames);
-            printf("New\n");
+int8_t streq(const char *str1, const char *str2);
+int32_t loadSquadFile(char *filename);
+void removeOverlap();
+
+enum {
+    CA_NAME = 0, // only first name (string)
+    CA_DESCRIPTION = 1, // all information in the character file prior to the connections list (string)
+    CA_BIRTHYEAR = 2, // int
+    CA_BIRTHMONTH = 3, // int (1 to 12)
+    CA_BIRTHDAY = 4, // int (1 to 31)
+    CA_MENTIONED = 5, // int
+    CA_CONNECTIONS = 6, // list, see CO_X
+    CA_XPOS = 7, // double
+    CA_YPOS = 8, // double
+    CA_SIZE = 9, // double
+    CA_NUMBER_OF_FIELDS = 10,
+};
+
+enum {
+    CO_NAME = 0, // only first name (string)
+    CO_INDEX = 1, // int
+    CO_DESCRIPTION = 2, // string
+    CO_NUMBER_OF_FIELDS = 3,
+};
+
+char months[12][32] = {
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+};
+
+enum {
+    KEYS_LMB,
+    KEYS_RMB,
+    KEYS_SPACE,
+};
+
+typedef struct {
+    list_t *characters;
+    double screenX;
+    double screenY;
+    double zoom;
+    double scrollSpeed;
+    int32_t mouseHover;
+    int32_t mouseDragging;
+    double anchorX;
+    double anchorY;
+    double anchorMouseX;
+    double anchorMouseY;
+    int8_t keys[32];
+} squad_t;
+
+squad_t self;
+
+void init() {
+    self.characters = list_init();
+    self.screenX = 0;
+    self.screenY = 0;
+    self.zoom = 1;
+    self.scrollSpeed = 1.15;
+    self.mouseHover = -1;
+    self.mouseDragging = -1;
+    /* load files */
+    char *constructedFilepath = malloc(5120);
+    strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
+    strcat(constructedFilepath, "characters");
+    list_t *squadFiles = osToolsFileList(constructedFilepath);
+    for (int32_t i = 0; i < squadFiles -> length; i += 2) {
+        char *name = squadFiles -> data[i].s;
+        int32_t length = strlen(name);
+        if (length > 2 && name[length - 1] == 'q' && name[length - 2] == 's' && name[length - 3] == '.') {
+            strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
+            strcat(constructedFilepath, "characters/");
+            strcat(constructedFilepath, name);
+            loadSquadFile(constructedFilepath);
         }
-        if (tt_ribbon.output[2] == 2) { // Save
-            if (osToolsFileDialog.selectedFilenames -> length == 0) {
-                if (osToolsFileDialogSave(OSTOOLS_FILE_DIALOG_FILE, "Save.txt", NULL) != -1) {
-                    printf("Saved to: %s\n", osToolsFileDialog.selectedFilenames -> data[0].s);
+    }
+    free(constructedFilepath);
+    /* update indices */
+    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+        list_t *connections = self.characters -> data[characterIndex + CA_CONNECTIONS].r;
+        for (int32_t connectionIndex = 0; connectionIndex < connections -> length; connectionIndex += CO_NUMBER_OF_FIELDS) {
+            char *name = connections -> data[connectionIndex + CO_NAME].s;
+            for (int32_t characterIndexInner = 0; characterIndexInner < self.characters -> length; characterIndexInner += CA_NUMBER_OF_FIELDS) {
+                if (streq(name, self.characters -> data[characterIndexInner + CA_NAME].s)) {
+                    /* match */
+                    connections -> data[connectionIndex + CO_INDEX].i = characterIndexInner;
+                    break;
                 }
-            } else {
-                printf("Saved to: %s\n", osToolsFileDialog.selectedFilenames -> data[0].s);
-            }
-        }
-        if (tt_ribbon.output[2] == 3) { // Save As...
-            list_clear(osToolsFileDialog.selectedFilenames);
-            if (osToolsFileDialogSave(OSTOOLS_FILE_DIALOG_FILE, "Save.txt", NULL) != -1) {
-                printf("Saved to: %s\n", osToolsFileDialog.selectedFilenames -> data[0].s);
-            }
-        }
-        if (tt_ribbon.output[2] == 4) { // Open
-            list_clear(osToolsFileDialog.selectedFilenames);
-            if (osToolsFileDialogOpen(OSTOOLS_FILE_DIALOG_MULTIPLE_SELECT, OSTOOLS_FILE_DIALOG_FILE, "", NULL) != -1) {
-                printf("Loaded data from: ");
-                list_print(osToolsFileDialog.selectedFilenames);
             }
         }
     }
-    if (tt_ribbon.output[1] == 1) { // Edit
-        if (tt_ribbon.output[2] == 1) { // Undo
-            printf("Undo\n");
-        }
-        if (tt_ribbon.output[2] == 2) { // Redo
-            printf("Redo\n");
-        }
-        if (tt_ribbon.output[2] == 3) { // Cut
-            osToolsClipboardSetText("test123");
-            printf("Cut \"test123\" to clipboard!\n");
-        }
-        if (tt_ribbon.output[2] == 4) { // Copy
-            osToolsClipboardSetText("test345");
-            printf("Copied \"test345\" to clipboard!\n");
-        }
-        if (tt_ribbon.output[2] == 5) { // Paste
-            osToolsClipboardGetText();
-            printf("Pasted \"%s\" from clipboard!\n", osToolsClipboard.text);
-        }
+    /* run algorithms - TODO */
+    removeOverlap();
+}
+
+int8_t streq(const char *str1, const char *str2) {
+    if (strcmp(str1, str2) == 0) {
+        return 1;
     }
-    if (tt_ribbon.output[1] == 2) { // View
-        if (tt_ribbon.output[2] == 1) { // Change theme
-            printf("Change theme\n");
-            if (tt_theme == TT_THEME_DARK) {
-                turtleBackgroundColor(36, 30, 32);
-                turtleToolsSetTheme(TT_THEME_COLT);
-            } else if (tt_theme == TT_THEME_COLT) {
-                turtleBackgroundColor(212, 201, 190);
-                turtleToolsSetTheme(TT_THEME_NAVY);
-            } else if (tt_theme == TT_THEME_NAVY) {
-                turtleBackgroundColor(255, 255, 255);
-                turtleToolsSetTheme(TT_THEME_LIGHT);
-            } else if (tt_theme == TT_THEME_LIGHT) {
-                turtleBackgroundColor(30, 30, 30);
-                turtleToolsSetTheme(TT_THEME_DARK);
+    return 0;
+}
+
+int32_t loadSquadFile(char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("ERROR: Could not open file %s\n", filename);
+        return -1;
+    }
+    char firstName[32] = "NULL";
+    int32_t fileLength = strlen(filename);
+    for (int32_t i = fileLength; i > -1; i--) {
+        if (filename[i] == '.') {
+            filename[i] = '\0';
+        }
+        if (filename[i] == '/' || filename[i] == '\\') {
+            if (fileLength - i < 32) {
+                strcpy(firstName, filename + i + 1);
+                break;
             }
         }
-        if (tt_ribbon.output[2] == 2) { // GLFW
-            printf("GLFW settings\n");
+    }
+    /* populate character list */
+    int32_t characterIndex = self.characters -> length;
+    list_append(self.characters, (unitype) firstName, 's'); // CA_NAME
+    list_append(self.characters, (unitype) "NULL - to be replaced", 's'); // CA_DESCRIPTION
+    list_append(self.characters, (unitype) 1900, 'i'); // CA_BIRTHYEAR
+    list_append(self.characters, (unitype) 1, 'i'); // CA_BIRTHMONTH
+    list_append(self.characters, (unitype) 1, 'i'); // CA_BIRTHDAY
+    list_append(self.characters, (unitype) 0, 'i'); // CA_MENTIONED
+    list_t *connections = list_init();
+    list_append(self.characters, (unitype) connections, 'r'); // CA_CONNECTIONS
+    list_append(self.characters, (unitype) randomDouble(-60, 60), 'd'); // CA_XPOS
+    list_append(self.characters, (unitype) randomDouble(-60, 60), 'd'); // CA_YPOS
+    list_append(self.characters, (unitype) 10.0, 'd'); // CA_SIZE
+    /* read file */
+    char *lineBuffer = malloc(4096);
+    char *description = malloc(8192);
+    description[0] = '\0';
+    int32_t mode = 0;
+    int32_t line = 0;
+    while (fgets(lineBuffer, 4096, fp) != NULL) {
+        while (strlen(lineBuffer) > 0 && (lineBuffer[strlen(lineBuffer) - 1] == '\r' || lineBuffer[strlen(lineBuffer) - 1] == '\n')) {
+            lineBuffer[strlen(lineBuffer) - 1] = '\0';
+        }
+        if (streq(lineBuffer, "# Connections")) {
+            free(self.characters -> data[characterIndex + CA_DESCRIPTION].s);
+            self.characters -> data[characterIndex + CA_DESCRIPTION].s = description;
+            mode = 1;
+            continue;
+        }
+        if (mode == 0) {
+            if (line == 0) {
+                /* full name */
+            } else if (line == 1) {
+                /* birthday */
+                
+                if (0) {
+                    if (0) {
+                        /* month, day, and year */
+                    } else {
+                        /* just month and year */
+                    }
+                } else {
+                    /* just year */
+                    sscanf(lineBuffer + strlen("Born: "), "%d", &self.characters -> data[characterIndex + CA_BIRTHYEAR].i);
+                }
+            } else if (line == 2) {
+                /* mentioned */
+                sscanf(lineBuffer + strlen("Mentioned "), "%d", &self.characters -> data[characterIndex + CA_MENTIONED].i);
+                self.characters -> data[characterIndex + CA_SIZE].d = log(self.characters -> data[characterIndex + CA_MENTIONED].i + 1) * 4 + 10;
+            }
+            /* description */
+            strcat(description, lineBuffer);
+            strcat(description, "\n");
+            line++;
+        } else {
+            /* connection */
+            char *line = lineBuffer + 2; // skip "- "
+            int32_t length = strlen(line);
+            int32_t found = -1;
+            for (int32_t i = 0; i < length; i++) {
+                if (line[i] == ',') {
+                    found = i;
+                    break;
+                }
+            }
+            if (found != -1) {
+                char *name = line;
+                name[found] = '\0';
+                char *description = line + found + 2;
+                list_append(connections, (unitype) name, 's'); // CO_NAME
+                list_append(connections, (unitype) -1, 'i'); // CO_INDEX
+                list_append(connections, (unitype) description, 's'); // CO_DESCRIPTION
+            }
+        }
+    }
+    fclose(fp);
+    free(lineBuffer);
+    return 0;
+}
+
+void removeOverlap() {
+    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+        /* sweep ten times */
+        for (int32_t k = 0; k < 10; k++) {
+            for (int32_t characterIndexInner = 0; characterIndexInner < self.characters -> length; characterIndexInner += CA_NUMBER_OF_FIELDS) {
+                double xdist = self.characters -> data[characterIndexInner + CA_XPOS].d - self.characters -> data[characterIndex + CA_XPOS].d;
+                double ydist = self.characters -> data[characterIndexInner + CA_YPOS].d - self.characters -> data[characterIndex + CA_YPOS].d;
+                double combinedSize = self.characters -> data[characterIndexInner + CA_SIZE].d / 2 + self.characters -> data[characterIndex + CA_SIZE].d / 2;
+                if (xdist * xdist + ydist * ydist < combinedSize * combinedSize && characterIndex != characterIndexInner) {
+                    /* nodes are touching */
+                    double theta = randomDouble(0, 360);
+                    if (self.characters -> data[characterIndex + CA_SIZE].d > self.characters -> data[characterIndexInner + CA_SIZE].d) {
+                        self.characters -> data[characterIndexInner + CA_XPOS].d = self.characters -> data[characterIndex + CA_XPOS].d + sin(theta / 57.2958) * combinedSize * 1.1;
+                        self.characters -> data[characterIndexInner + CA_YPOS].d = self.characters -> data[characterIndex + CA_YPOS].d + cos(theta / 57.2958) * combinedSize * 1.1;
+                    } else {
+                        self.characters -> data[characterIndex + CA_XPOS].d = self.characters -> data[characterIndexInner + CA_XPOS].d + sin(theta / 57.2958) * combinedSize * 1.1;
+                        self.characters -> data[characterIndex + CA_YPOS].d = self.characters -> data[characterIndexInner + CA_YPOS].d + cos(theta / 57.2958) * combinedSize * 1.1;
+                    }
+                }
+            }
         }
     }
 }
 
-void parsePopupOutput(GLFWwindow *window) {
-    if (tt_popup.output[0] == 0) {
-        return;
+void render() {
+    self.mouseHover = -1;
+    /* render connections - TODO */
+
+    /* render characters */
+    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+        double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
+        double ypos = (self.characters -> data[characterIndex + CA_YPOS].d + self.screenY) * self.zoom;
+        double size = self.characters -> data[characterIndex + CA_SIZE].d * self.zoom;
+        double distance = (turtle.mouseX - xpos) * (turtle.mouseX - xpos) + (turtle.mouseY - ypos) * (turtle.mouseY - ypos);
+        if (distance < size * size / 4) {
+            self.mouseHover = characterIndex;
+        }
+        if (characterIndex == self.mouseHover || characterIndex == self.mouseDragging) {
+            turtlePenColor(255, 255, 255);
+            turtlePenSize(size * 1.05);
+            turtleGoto(xpos, ypos);
+            turtlePenDown();
+            turtlePenUp();
+        }
+        turtlePenColor(255, 169, 169);
+        turtlePenSize(size);
+        turtleGoto(xpos, ypos);
+        turtlePenDown();
+        turtlePenUp();
+        turtlePenColor(0, 0, 0);
+        double textLength = turtleTextGetStringLength(self.characters -> data[characterIndex + CA_NAME].s, size);
+        double factor = -0.48493 * log(size / textLength + 1) + 0.99230; // numbers calculated from 0.95 factor for Samburu Warrior, and 0.75 factor for Bix. Using log(size / textLength + 1)x + y
+        double textSize = size / textLength * size * factor;
+        turtleTextWriteString(self.characters -> data[characterIndex + CA_NAME].s, xpos, ypos, textSize, 50);
     }
-    tt_popup.output[0] = 0; // untoggle
-    if (tt_popup.output[1] == 0) { // cancel
-        turtle.close = 0;
-        glfwSetWindowShouldClose(window, 0);
+}
+
+void mouse() {
+    if (turtleMouseDown()) {
+        if (self.keys[KEYS_LMB] == 0) {
+            /* first tick */
+            self.keys[KEYS_LMB] = 1;
+            if (self.mouseHover != -1) {
+                self.mouseDragging = self.mouseHover;
+                self.anchorX = self.characters -> data[self.mouseDragging + CA_XPOS].d;
+                self.anchorY = self.characters -> data[self.mouseDragging + CA_YPOS].d;
+                self.anchorMouseX = turtle.mouseX;
+                self.anchorMouseY = turtle.mouseY;
+            } else {
+                self.anchorX = self.screenX;
+                self.anchorY = self.screenY;
+                self.anchorMouseX = turtle.mouseX;
+                self.anchorMouseY = turtle.mouseY;
+            }
+        } else {
+            if (self.mouseDragging != -1) {
+                self.characters -> data[self.mouseDragging + CA_XPOS].d = self.anchorX + (turtle.mouseX - self.anchorMouseX) / self.zoom;
+                self.characters -> data[self.mouseDragging + CA_YPOS].d = self.anchorY + (turtle.mouseY - self.anchorMouseY) / self.zoom;
+            } else {
+                self.screenX = self.anchorX + (turtle.mouseX - self.anchorMouseX) / self.zoom;
+                self.screenY = self.anchorY + (turtle.mouseY - self.anchorMouseY) / self.zoom;
+            }
+        }
+    } else {
+        if (self.keys[KEYS_LMB]) {
+            self.keys[KEYS_LMB] = 0;
+            self.mouseDragging = -1;
+        }
     }
-    if (tt_popup.output[1] == 1) { // close
-        turtle.popupClose = 1;
+    double scroll = turtleMouseWheel();
+    if (scroll > 0) {
+        self.screenX -= (turtle.mouseX * (-1 / self.scrollSpeed + 1)) / self.zoom;
+        self.screenY -= (turtle.mouseY * (-1 / self.scrollSpeed + 1)) / self.zoom;
+        self.zoom *= self.scrollSpeed;
+    } else if (scroll < 0) {
+        self.zoom /= self.scrollSpeed;
+        self.screenX += (turtle.mouseX * (-1 / self.scrollSpeed + 1)) / self.zoom;
+        self.screenY += (turtle.mouseY * (-1 / self.scrollSpeed + 1)) / self.zoom;
+    }
+    if (turtleKeyPressed(GLFW_KEY_SPACE)) {
+        if (self.keys[KEYS_SPACE] == 0) {
+            self.keys[KEYS_SPACE] = 1;
+            removeOverlap();
+        }
+    } else {
+        self.keys[KEYS_SPACE] = 0;
     }
 }
 
@@ -109,364 +346,33 @@ int main(int argc, char *argv[]) {
     osToolsFileDialogAddGlobalExtension("csv"); // add csv to extension restrictions
 
     /* initialise turtleText */
-    char constructedFilepath[5120];
+    char *constructedFilepath = malloc(5120);
     strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
     strcat(constructedFilepath, "config/roberto.tgl");
     turtleTextInit(constructedFilepath);
+    free(constructedFilepath);
 
-    /* initialise turtleTools ribbon */
-    turtleToolsSetTheme(TT_THEME_DARK); // dark theme preset
-    strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
-    strcat(constructedFilepath, "config/ribbonConfig.txt");
-    tt_ribbonInit(constructedFilepath);
+    turtleToolsSetTheme(TT_THEME_DARK);
 
-    // list_t *ribbonConfig = list_init();
-    // list_append(ribbonConfig, (unitype) "File, 📄 New, 📄 Save, 📄 Save As..., 📄 Open", 's');
-    // list_append(ribbonConfig, (unitype) "Edit, Undo, Redo, Cut, Copy, Paste", 's');
-    // list_append(ribbonConfig, (unitype) "View, Change Theme, GLFW", 's');
-    // tt_ribbonInitList(ribbonConfig);
-
-    /* initialise turtleTools popup */
-    strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
-    strcat(constructedFilepath, "config/popupConfig.txt");
-    tt_popupInit(constructedFilepath);
-    // list_t *popupConfig = list_init();
-    // list_append(popupConfig, (unitype) "Are you sure you want to close?", 's');
-    // list_append(popupConfig, (unitype) "Cancel", 's');
-    // list_append(popupConfig, (unitype) "Close", 's');
-    // tt_popupInitList(popupConfig);
-    strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
-    strcat(constructedFilepath, "config/test.csv");
-    list_t *rowLike = osToolsLoadCSVString(constructedFilepath, OSTOOLS_CSV_ROW);
-    list_t *columnLike = osToolsLoadCSVString(constructedFilepath, OSTOOLS_CSV_COLUMN);
-    if (rowLike != NULL) {
-        list_print(rowLike);
-    }
-    if (columnLike != NULL) {
-        list_print(columnLike);
-    }
-
-    /* textures */
-    turtle_texture_t empvImage = turtleTextureLoad("images/EMPV.png");
-    // uint8_t array[16] = {
-    //     100, 100, 100, 100,
-    //     100, 100, 100, 100,
-    //     100, 100, 100, 100,
-    //     100, 100, 100, 100,
-    // };
-    // turtle_texture_t empvImage = turtleTextureLoadArray(array, 4, 4, GL_GREEN);
-    turtleTexturePrint(empvImage);
-    list_t *folders = osToolsFolderList(".");
-    list_t *files = osToolsFileList(".");
-    list_t *filesAndFolders = osToolsFileAndFolderList(".");
-    list_print(folders);
-    list_print(files);
-    list_print(filesAndFolders);
-    list_free(folders);
-    list_free(files);
-    list_free(filesAndFolders);
-    list_t *serialPorts = osToolsSerialList();
-    printf("Serial Ports: ");
-    list_print(serialPorts);
-    for (int32_t i = 0; i < serialPorts -> length; i++) {
-        osToolsSerialOpen(serialPorts -> data[i].s, OSTOOLS_BAUD_115200);
-        osToolsSerialSend(serialPorts -> data[i].s, (uint8_t *) "Hello World\r\n", strlen("Hello World\r\n"));
-        osToolsSerialClose(serialPorts -> data[i].s);
-    }
-    list_free(serialPorts);
-
-    /* Server testing */
-    // osToolsServerSocketCreate("Server1", OSTOOLS_PROTOCOL_TCP, "6000");
-    // osToolsServerSocketListen("Server1", "Client1");
-    // osToolsSocketSend("Client1", (uint8_t *) "Hello World\r\n", strlen("Hello World\r\n"));
-    // uint8_t *buffer = calloc(128, 1);
-    // osToolsSocketReceive("Client1", buffer, 128, 10000);
-    // printf("Received: %s\n", buffer);
-    // free(buffer);
-    // osToolsSocketDestroy("Client1");
-    /* Client testing */
-    // osToolsClientSocketCreate("Client1", OSTOOLS_PROTOCOL_TCP, "127.0.0.1", "6000", 10000);
-    // osToolsSocketSend("Client1", (uint8_t *) "Hello World\r\n", strlen("Hello World\r\n"));
-    // uint8_t *buffer = calloc(128, 1);
-    // osToolsSocketReceive("Client1", buffer, 128, 10000);
-    // printf("Received: %s\n", buffer);
-    // free(buffer);
-    // osToolsSocketDestroy("Client1");
-
-    /* test list saving and loading */
-    // list_t *listWrite = list_init();
-    // list_append(listWrite, (unitype) 'A', 'c');
-    // list_append(listWrite, (unitype) 1.0, 'd');
-    // list_append(listWrite, (unitype) 500.1, 'd');
-    // list_append(listWrite, (unitype) 2938274, 'i');
-    // list_append(listWrite, (unitype) 6552, 'h');
-    // list_t *listEmbed = list_init();
-    // list_append(listEmbed, (unitype) "C:\\Information\\Programming\\C\\openGL\\turtle-development", 's');
-    // list_append(listWrite, (unitype) listEmbed, 'r');
-    // list_append(listWrite, (unitype) "SimpleString", 's');
-    // list_append(listWrite, (unitype) "Hello World illegal ,,[],\\\\akdja", 's');
-    // list_append(listWrite, (unitype) 'Z', 'c');
-    // FILE *listWriteFile = fopen("listWriteFile.txt", "w");
-    // list_write(listWriteFile, listWrite);
-    // fclose(listWriteFile);
-    // FILE *listReadFile = fopen("listWriteFile.txt", "r");
-    // list_t *listRead = list_read(listReadFile);
-    // fclose(listReadFile);
-    // list_print(listWrite);
-    // list_print(listRead);
-
-    list_t *cameras = osToolsCameraList();
-    printf("Cameras: ");
-    list_print(cameras);
-    char *cameraName = NULL;
-    uint8_t *cameraFrame = NULL;
-    list_t *imageDropdownOptions = list_init();
-    list_append(imageDropdownOptions, (unitype) "Image", 's');
-    for (int32_t i = 0; i < cameras -> length; i += 4) {
-        list_append(imageDropdownOptions, cameras -> data[i], 's');
-    }
-    tt_dropdown_t *imageDropdown = tt_dropdownInit("Source", imageDropdownOptions, NULL, TT_DROPDOWN_ALIGN_RIGHT, 700, 36, 8);
-    int32_t oldImageDropdown = imageDropdown -> value;
-
-    double sliderVar, dialVar;
-    tt_button_t *button = tt_buttonInit("Button", NULL, 150, 20, 10);
-    button -> shape = TT_BUTTON_SHAPE_ROUNDED_RECTANGLE;
-    tt_switchInit("Switch", NULL, 150, -20, 10);
-    tt_dialInit("Exp", &dialVar, TT_DIAL_SCALE_EXP, -150, 20, 10, 0, 1000, 1);
-    tt_dialInit("Linear", &dialVar, TT_DIAL_SCALE_LINEAR, -150, -20, 10, 0, 1000, 1);
-    tt_dialInit("Log", &dialVar, TT_DIAL_SCALE_LOG, -150, -60, 10, 0, 1000, 1);
-    tt_sliderInit("Slider", NULL, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_LEFT, -100, 35, 10, 50, 0, 255, 1);
-    tt_sliderInit("Slider", NULL, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_CENTER, 0, 35, 10, 50, 0, 255, 1);
-    tt_sliderInit("Slider", NULL, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_RIGHT, 100, 35, 10, 50, 0, 255, 1);
-    tt_sliderInit("Log", &sliderVar, TT_SLIDER_TYPE_VERTICAL, TT_SLIDER_ALIGN_LEFT, -100, -35, 10, 50, 0, 255, 1) -> scale = TT_SLIDER_SCALE_LOG;
-    tt_sliderInit("Linear", &sliderVar, TT_SLIDER_TYPE_VERTICAL, TT_SLIDER_ALIGN_CENTER, 0, -35, 10, 50, 0, 255, 1) -> scale = TT_SLIDER_SCALE_LINEAR;
-    tt_sliderInit("Exp", &sliderVar, TT_SLIDER_TYPE_VERTICAL, TT_SLIDER_ALIGN_RIGHT, 100, -35, 10, 50, 0, 255, 1) -> scale = TT_SLIDER_SCALE_EXP;
-    tt_scrollbar_t *scrollbarX = tt_scrollbarInit(NULL, TT_SCROLLBAR_TYPE_HORIZONTAL, 20, -170, 10, 550, 50);
-    tt_scrollbar_t *scrollbarY = tt_scrollbarInit(NULL, TT_SCROLLBAR_TYPE_VERTICAL, 310, 0, 10, 320, 33);
-    list_t *dropdownOptions = list_init();
-    list_append(dropdownOptions, (unitype) "Indicator", 's');
-    list_append(dropdownOptions, (unitype) "Register", 's');
-    list_append(dropdownOptions, (unitype) "P15 Pin", 's');
-    list_append(dropdownOptions, (unitype) "K50 Touch", 's');
-    tt_dropdown_t *dropdown = tt_dropdownInit("Dropdown", dropdownOptions, NULL, TT_DROPDOWN_ALIGN_CENTER, 0, 70, 10);
-    tt_textbox_t *username = tt_textboxInit("Username", NULL, 128, -50, -110, 10, 100);
-    tt_textbox_t *password = tt_textboxInit("Password", NULL, 128, -50, -135, 10, 100);
-    list_t *contextOptions = list_init();
-    list_append(contextOptions, (unitype) "Button", 's');
-    list_append(contextOptions, (unitype) "Switch", 's');
-    list_append(contextOptions, (unitype) "Dial", 's');
-    list_append(contextOptions, (unitype) "Slider", 's');
-    list_append(contextOptions, (unitype) "Textbox", 's');
-    list_append(contextOptions, (unitype) "Dropdown", 's');
-    list_append(contextOptions, (unitype) "Scrollbar", 's');
-    list_append(contextOptions, (unitype) "Context", 's');
-    tt_context_t *context = tt_contextInit(contextOptions, NULL, 0, 0, 10);
-    context -> enabled = TT_ELEMENT_HIDE;
-
-    double x = 103, y = 95, z = 215;
-    list_t *sources = list_init();
-    list_append(sources, (unitype) "None", 's');
-    list_append(sources, (unitype) "SP932", 's');
-    list_append(sources, (unitype) "SP932U", 's');
-    list_append(sources, (unitype) "SP928", 's');
-    list_append(sources, (unitype) "SP1203", 's');
-    list_append(sources, (unitype) "SP-1550M", 's');
-    tt_dialInit("Power", NULL, TT_DIAL_SCALE_LINEAR, -150, -210, 10, 0, 100, 1);
-    tt_dialInit("Speed", NULL, TT_DIAL_SCALE_LINEAR, -100, -210, 10, 0, 1000, 1);
-    tt_dialInit("Exposure", NULL, TT_DIAL_SCALE_EXP, -50, -210, 10, 0, 1000, 1);
-    tt_dropdownInit("Source", sources, NULL, TT_DROPDOWN_ALIGN_LEFT, -10, -211.2, 10);
-    tt_slider_t *xSlider = tt_sliderInit("", &x, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_CENTER, -100, -240, 10, 100, -300, 300, 0);
-    tt_slider_t *ySlider = tt_sliderInit("", &y, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_CENTER, -100, -260, 10, 100, -300, 300, 0);
-    tt_slider_t *zSlider = tt_sliderInit("", &z, TT_SLIDER_TYPE_HORIZONTAL, TT_SLIDER_ALIGN_CENTER, -100, -280, 10, 100, -300, 300, 0);
-    tt_switchInit("", NULL, -10, -240, 10);
-    tt_switchInit("", NULL, -10, -260, 10);
-    tt_switchInit("", NULL, -10, -280, 10);
-
-    tt_switch_t *sideswipe = tt_switchInit("Side Swipe", NULL, 305, 15, 10);
-    tt_switch_t *checkbox = tt_switchInit("Checkbox", NULL, 300, 0, 10);
-    tt_switch_t *xbox = tt_switchInit("Xbox", NULL, 300, -15, 10);
-    sideswipe -> style = TT_SWITCH_STYLE_SIDESWIPE_LEFT;
-    checkbox -> value = 1;
-    checkbox -> style = TT_SWITCH_STYLE_CHECKBOX;
-    xbox -> value = 1;
-    xbox -> style = TT_SWITCH_STYLE_XBOX;
-    tt_button_t *textButton = tt_buttonInit("Text Button", NULL, 330, -30, 10);
-    tt_button_t *circleButton = tt_buttonInit("Circle Button", NULL, 338, -100, 10);
-    textButton -> shape = TT_BUTTON_SHAPE_TEXT;
-    circleButton -> shape = TT_BUTTON_SHAPE_CIRCLE;
-
-    uint64_t tick = 0; // count number of ticks since application started
-    tt_readerInit("tick", (unitype *) &tick, 'l', -315, 155, 10);
-    tt_readerInit("tt_globals.elementLogicTypeOld", (unitype *) &tt_globals.elementLogicTypeOld, 'i', -315, 135, 10);
-    tt_readerInit("tt_globals.elementLogicIndexOld", (unitype *) &tt_globals.elementLogicIndexOld, 'i', -315, 115, 10);
-    tt_reader_t *listReader = tt_readerInit("Sources", (unitype *) &sources, 'r', -315, 95, 10);
-    listReader -> height = 175;
-    listReader -> width = 100;
-
-    list_t *xPositions = list_init();
-    list_t *yPositions = list_init();
-    for (int32_t i = 0; i < tt_elements.all -> length; i++) {
-        list_append(xPositions, (unitype) ((tt_button_t *) tt_elements.all -> data[i].p) -> x, 'd');
-        list_append(yPositions, (unitype) ((tt_button_t *) tt_elements.all -> data[i].p) -> y, 'd');
-    }
-
-    double scroll = 0.0;
-    double scrollFactor = 15;
-    char keys[8] = {0};
+    init();
 
     uint32_t tps = 120; // ticks per second (locked to fps in this case)
     clock_t start, end;
-
-    // turtleBackgroundColor(13, 17, 23);
     
-    while (turtle.popupClose == 0) {
+    while (turtle.close == 0) {
         start = clock();
         turtleGetMouseCoordinates();
         turtleClear();
-        /* update element positions (scrollbar) */
-        for (int32_t i = 0; i < tt_elements.all -> length; i++) {
-            if (((tt_button_t *) tt_elements.all -> data[i].p) -> element != TT_ELEMENT_SCROLLBAR && ((tt_button_t *) tt_elements.all -> data[i].p) -> element != TT_ELEMENT_CONTEXT) {
-                if ((((tt_button_t *) tt_elements.all -> data[i].p) -> element == TT_ELEMENT_VARIABLE_READER || ((tt_button_t *) tt_elements.all -> data[i].p) -> element == TT_ELEMENT_LIST_READER) && (((tt_reader_t *) tt_elements.all -> data[i].p) -> status == TT_STATUS_CLICK || ((tt_reader_t *) tt_elements.all -> data[i].p) -> status == TT_STATUS_CLICK_FIRST_TICK)) {
-                    xPositions -> data[i].d = ((tt_button_t *) tt_elements.all -> data[i].p) -> x + scrollbarX -> value * 5;
-                    yPositions -> data[i].d = ((tt_button_t *) tt_elements.all -> data[i].p) -> y - scrollbarY -> value * 3.3;
-                    continue;
-                }
-                ((tt_button_t *) tt_elements.all -> data[i].p) -> x = xPositions -> data[i].d - scrollbarX -> value * 5;
-                ((tt_button_t *) tt_elements.all -> data[i].p) -> y = yPositions -> data[i].d + scrollbarY -> value * 3.3;
-            }
-        }
-
-        /* write element annotations */
-        tt_setColor(TT_COLOR_TEXT);
-        turtleTextWriteString("X", xSlider -> x - xSlider -> length / 2 - xSlider -> size, xSlider -> y, xSlider -> size - 1, 100);
-        turtleTextWriteStringf(ySlider -> x + xSlider -> length / 2 + xSlider -> size, xSlider -> y, 4, 0, "%.01lf", round(x) / 10);
-        turtleTextWriteString("Y", xSlider -> x - ySlider -> length / 2 - xSlider -> size, ySlider -> y, xSlider -> size - 1, 100);
-        turtleTextWriteStringf(ySlider -> x + ySlider -> length / 2 + xSlider -> size, ySlider -> y, 4, 0, "%.01lf", round(y) / 10);
-        turtleTextWriteString("Z", zSlider -> x - zSlider -> length / 2 - xSlider -> size, zSlider -> y, xSlider -> size - 1, 100);
-        turtleTextWriteStringf(zSlider -> x + zSlider -> length / 2 + xSlider -> size, zSlider -> y, 4, 0, "%.01lf", round(z) / 10);
-        if (username -> mouseOver || password -> mouseOver) {
-            osToolsSetCursor(GLFW_IBEAM_CURSOR);
-        } else {
-            osToolsSetCursor(GLFW_ARROW_CURSOR);
-        }
-
-        /* write all characters supported */
-        turtleTextWriteUnicode("AÀÁĂÄÃÅĀĄÆBCĆČĊÇDĎĐÐEÈÉĚÊËĒĖĘƏFGĞĠHĦ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 180, 10, 0);
-        turtleTextWriteUnicode("IÌÍÎÏĪİĮJKĶLĹĽĻŁĿMNŃŇÑŅOÒÓÔÖÕŐØŒPQRŔ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 195, 10, 0);
-        turtleTextWriteUnicode("ŘSŚŠŞȘẞTŤȚÞUÙÚÛÜŮŰŪŲVWXYÝZŹŽŻaàáâăäã", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 210, 10, 0);
-        turtleTextWriteUnicode("åāąæbcćčċçdďđðeèéěêëēėęəfgğġhħiìíîïī", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 225, 10, 0);
-        turtleTextWriteUnicode("ıįjkķlĺľļłŀmnńňñņoòóôöõőøœpqrŕřsśšşș", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 240, 10, 0);
-        turtleTextWriteUnicode("ßtťțþuùúûüůűūųvwxyýzźžżАБВГҐҒДЂЕЁЄӘЖ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 255, 10, 0);
-        turtleTextWriteUnicode("ӁЗИӢЙІЇЈКҚҜЛЉМНҢЊОӨПРСТЋУӮҮҰЎФХҲҺЦЧҶ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 270, 10, 0);
-        turtleTextWriteUnicode("ҸЏШЩЪЫЬЭЮЯабвгґғдђеёєәжӂзиӣйіїјкқҝлљ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 285, 10, 0);
-        turtleTextWriteUnicode("мнңњоөпрстћуӯүұўфхҳһцчҷҹџшщъыьэюя", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 300, 10, 0);
-        turtleTextWriteUnicode("ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 315, 10, 0);
-        turtleTextWriteUnicode("αβγδεζηθικλμνξοπρσςτυφχψω", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 330, 10, 0);
-        turtleTextWriteUnicode("1234567890!@#$£€₺₽¥₩₹₣฿%^&*()`~-_=+[", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 345, 10, 0);
-        turtleTextWriteUnicode("{]}\\|;:‘'’“\"”,<.>/?½¨°︘📷📄📁😊", scrollbarX -> value * -5 + 260, scrollbarY -> value * 3.3 - 360, 10, 0);
-        
-        turtleTextWriteStringRotated("Rotated Text", scrollbarX -> value * -5 - 100, scrollbarY -> value * 3.3 + 75, 9, 50, -15);
-        
-        /* draw texture */
-        if (oldImageDropdown != imageDropdown -> value) {
-            if (cameraName) {
-                osToolsCameraClose(cameraName);
-            }
-            oldImageDropdown = imageDropdown -> value;
-            if (imageDropdown -> value == 0) {
-                cameraName = NULL;
-                if (cameraFrame) {
-                    free(cameraFrame);
-                    cameraFrame = NULL;
-                }
-                turtleTextureUnload(empvImage);
-                empvImage = turtleTextureLoad("images/EMPV.png");
-            } else {
-                cameraName = cameras -> data[(imageDropdown -> value - 1) * 4].s;
-                osToolsCameraOpen(cameraName);
-                if (cameraFrame) {
-                    free(cameraFrame);
-                }
-                cameraFrame = malloc(cameras -> data[(imageDropdown -> value - 1) * 4 + 1].i * cameras -> data[(imageDropdown -> value - 1) * 4 + 2].i * 3);
-            }
-        }
-        if (cameraName) {
-            osToolsCameraReceive(cameraName, cameraFrame);
-            turtleTextureReplaceArray(empvImage, cameraFrame, cameras -> data[(imageDropdown -> value - 1) * 4 + 1].i, cameras -> data[(imageDropdown -> value - 1) * 4 + 2].i, GL_RGB);
-            double textureCenterX = 550;
-            double textureCenterY = -60.5;
-            double textureWidth = 300.0 / ((16.0 / 9) * ((double) cameras -> data[(imageDropdown -> value - 1) * 4 + 2].i / cameras -> data[(imageDropdown -> value - 1) * 4 + 1].i));
-            if (textureWidth > 300) {
-                textureWidth = 300;
-            }
-            double textureHeight = (16.0 / 9) * ((double) cameras -> data[(imageDropdown -> value - 1) * 4 + 2].i / cameras -> data[(imageDropdown -> value - 1) * 4 + 1].i) * 169.0;
-            if (textureHeight > 169) {
-                textureHeight = 169;
-            }
-            turtleTexture(empvImage, scrollbarX -> value * -5 + textureCenterX - textureWidth / 2, scrollbarY -> value * 3.3 + textureCenterY - textureHeight / 2, scrollbarX -> value * -5 + textureCenterX + textureWidth / 2, scrollbarY -> value * 3.3 + textureCenterY + textureHeight / 2, 0);
-        } else {
-            turtleTexture(empvImage, scrollbarX -> value * -5 + 400, scrollbarY -> value * 3.3 - 145, scrollbarX -> value * -5 + 700, scrollbarY -> value * 3.3 + 24, 0);
-        }
-
-        // turtlePenColor(0, 0, 0);
-        // turtle3DTriangle(-5, 0, 10, 5, 0, 10, 0, 5, 10);
-
-        scroll = turtleMouseWheel();
-        if (scroll != 0) {
-            if (turtleKeyPressed(GLFW_KEY_LEFT_SHIFT)) {
-                scrollbarX -> value -= scroll * scrollFactor;
-                if (scrollbarX -> value < 0) {
-                    scrollbarX -> value = 0;
-                }
-                if (scrollbarX -> value > 100) {
-                    scrollbarX -> value = 100;
-                }
-            } else {
-                scrollbarY -> value -= scroll * scrollFactor;
-                if (scrollbarY -> value < 0) {
-                    scrollbarY -> value = 0;
-                }
-                if (scrollbarY -> value > 100) {
-                    scrollbarY -> value = 100;
-                }
-            }
-        }
-        if (button -> value) {
-            button -> value = 0;
-            printf("button clicked\n");
-        }
-        if (circleButton -> value) {
-            circleButton -> value = 0;
-            printf("circle button clicked\n");
-        }
-        if (textButton -> value) {
-            textButton -> value = 0;
-            printf("text button clicked\n");
-        }
-        if (turtleMouseRight()) {
-            if (keys[1] == 0) {
-                keys[1] = 1;
-                context -> enabled = TT_ELEMENT_ENABLED;
-                context -> x = turtle.mouseX;
-                context -> y = turtle.mouseY;
-            }
-        } else {
-            keys[1] = 0;
-        }
+        render();
+        mouse();
         turtleToolsUpdate(); // update turtleTools
         tt_setColor(TT_COLOR_TEXT);
         turtleTextWriteStringf(-310, -170, 5, 0, "%.2lf, %.2lf", turtle.mouseX, turtle.mouseY);
-        parseRibbonOutput(); // user defined function to use ribbon
-        parsePopupOutput(window); // user defined function to use popup
         turtleUpdate(); // update the screen
         end = clock();
         while ((double) (end - start) / CLOCKS_PER_SEC < (1.0 / tps)) {
             end = clock();
         }
-        tick++;
-    }
-    if (cameraName) {
-        osToolsCameraClose(cameraName);
     }
     turtleFree();
     glfwTerminate();
