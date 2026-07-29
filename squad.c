@@ -1,9 +1,14 @@
 /*
-Created by Ryan Sricha, 28.07.26
+Created by Ryan Srichai, 28.07.26
 
 TODO:
-- Color based on group
+- Selecting
+- Save and load positions
+- Highlight all in group
+- Hover popup for characters and connections
 - Algorithm to determine position of nodes (possibly multiple algorithms)
+- Finish all characters and connections
+- Search function
 */
 
 #include "turtle.h"
@@ -24,7 +29,10 @@ enum {
     CA_XPOS = 7, // double
     CA_YPOS = 8, // double
     CA_SIZE = 9, // double
-    CA_NUMBER_OF_FIELDS = 10,
+    CA_RED = 10, // int
+    CA_GREEN = 11, // int
+    CA_BLUE = 12, // int
+    CA_NUMBER_OF_FIELDS = 13,
 };
 
 enum {
@@ -47,6 +55,33 @@ char months[12][32] = {
     "October",
     "November",
     "December",
+};
+
+char groups[][64] = {
+    "Flaming Dildos",
+    "East Seventh Street",
+    "Crandale Country Club",
+    "Lou's Family",
+    "Ted's Family",
+    "Columbia Group",
+    "Safari",
+    "SweetSpot Networks",
+    "Bennie's Family",
+    "Country X",
+};
+
+/* TODO - try using the colors from the cover of the book */
+int32_t groupColors[] = {
+    227, 99, 4, // Flaming Dildos
+    127, 103, 82, // East Seventh Street
+    88, 159, 76, // Crandale Country Club
+    255, 171, 0, // Lou's Family
+    150, 70, 51, // Ted's Family
+    65, 129, 112, // Columbia Group
+    121, 134, 102, // Safari
+    16, 37, 116, // SweetSpot Networks
+    236, 164, 183, // Bennie's Family
+    38, 164, 186, // Country X
 };
 
 enum {
@@ -76,7 +111,7 @@ void init() {
     self.characters = list_init();
     self.screenX = 0;
     self.screenY = 0;
-    self.zoom = 1;
+    self.zoom = 0.3;
     self.scrollSpeed = 1.15;
     self.mouseHover = -1;
     self.mouseDragging = -1;
@@ -111,7 +146,9 @@ void init() {
         }
     }
     /* run algorithms - TODO */
-    removeOverlap();
+    for (int32_t i = 0; i < 10; i++) {
+        removeOverlap();
+    }
 }
 
 int8_t streq(const char *str1, const char *str2) {
@@ -140,6 +177,13 @@ int32_t loadSquadFile(char *filename) {
             }
         }
     }
+    if (strlen(firstName) == 1) {
+        /* the M exception */
+        firstName[1] = firstName[0];
+        firstName[0] = ' ';
+        firstName[2] = ' ';
+        firstName[3] = '\0';
+    }
     /* populate character list */
     int32_t characterIndex = self.characters -> length;
     list_append(self.characters, (unitype) firstName, 's'); // CA_NAME
@@ -150,15 +194,17 @@ int32_t loadSquadFile(char *filename) {
     list_append(self.characters, (unitype) 0, 'i'); // CA_MENTIONED
     list_t *connections = list_init();
     list_append(self.characters, (unitype) connections, 'r'); // CA_CONNECTIONS
-    list_append(self.characters, (unitype) randomDouble(-60, 60), 'd'); // CA_XPOS
-    list_append(self.characters, (unitype) randomDouble(-60, 60), 'd'); // CA_YPOS
+    list_append(self.characters, (unitype) randomDouble(-30, 30), 'd'); // CA_XPOS
+    list_append(self.characters, (unitype) randomDouble(-30, 30), 'd'); // CA_YPOS
     list_append(self.characters, (unitype) 10.0, 'd'); // CA_SIZE
+    list_append(self.characters, (unitype) 255, 'i'); // CA_RED
+    list_append(self.characters, (unitype) 169, 'i'); // CA_GREEN
+    list_append(self.characters, (unitype) 169, 'i'); // CA_BLUE
     /* read file */
     char *lineBuffer = malloc(4096);
     char *description = malloc(8192);
     description[0] = '\0';
     int32_t mode = 0;
-    int32_t line = 0;
     while (fgets(lineBuffer, 4096, fp) != NULL) {
         while (strlen(lineBuffer) > 0 && (lineBuffer[strlen(lineBuffer) - 1] == '\r' || lineBuffer[strlen(lineBuffer) - 1] == '\n')) {
             lineBuffer[strlen(lineBuffer) - 1] = '\0';
@@ -170,12 +216,18 @@ int32_t loadSquadFile(char *filename) {
             continue;
         }
         if (mode == 0) {
-            if (line == 0) {
-                /* full name */
-            } else if (line == 1) {
+            if (strncmp(lineBuffer, "Born: ", strlen("Born: ")) == 0) {
                 /* birthday */
-                
-                if (0) {
+                char *line = lineBuffer + strlen("Born: ");
+                int32_t foundMonth = 0;
+                for (int32_t month = 0; month < 12; month++) {
+                    if (strncmp(line, months[month], strlen(months[month]))) {
+                        foundMonth = month + 1;
+                        line += strlen(months[month]);
+                        break;
+                    }
+                }
+                if (foundMonth) { // TODO
                     if (0) {
                         /* month, day, and year */
                     } else {
@@ -183,9 +235,42 @@ int32_t loadSquadFile(char *filename) {
                     }
                 } else {
                     /* just year */
-                    sscanf(lineBuffer + strlen("Born: "), "%d", &self.characters -> data[characterIndex + CA_BIRTHYEAR].i);
+                    sscanf(line, "%d", &self.characters -> data[characterIndex + CA_BIRTHYEAR].i);
                 }
-            } else if (line == 2) {
+            } else if (strncmp(lineBuffer, "Groups: ", strlen("Groups: ")) == 0) {
+                /* groups */
+                double red = 0;
+                double green = 0;
+                double blue = 0;
+                char *line = lineBuffer + strlen("Groups: ");
+                char *ptr = strtok(line, ",");
+                int32_t numberofGroups = 0;
+                while (ptr != NULL) {
+                    int32_t groupAdd = -1;
+                    for (int32_t group = 0; group < sizeof(groups) / sizeof(groups[0]); group++) {
+                        if (strncmp(ptr, groups[group], strlen(groups[group])) == 0) {
+                            groupAdd = group;
+                            break;
+                        }
+                    }
+                    if (groupAdd != -1) {
+                        /* https://www.reddit.com/r/roguelikedev/comments/eyn7sr/how_to_mix_two_colour_lights */
+                        red = min(sqrt(red * red + groupColors[groupAdd * 3 + 0] * groupColors[groupAdd * 3 + 0]), 255);
+                        green = min(sqrt(green * green + groupColors[groupAdd * 3 + 1] * groupColors[groupAdd * 3 + 1]), 255);
+                        blue = min(sqrt(blue * blue + groupColors[groupAdd * 3 + 2] * groupColors[groupAdd * 3 + 2]), 255);
+                        numberofGroups++;
+                    }
+                    ptr = strtok(NULL, ",");
+                    if (ptr != NULL) {
+                        ptr++; // skip space
+                    }
+                }
+                if (numberofGroups > 0) {
+                    self.characters -> data[characterIndex + CA_RED].i = red;
+                    self.characters -> data[characterIndex + CA_GREEN].i = green;
+                    self.characters -> data[characterIndex + CA_BLUE].i = blue;
+                }
+            } else if (strncmp(lineBuffer, "Mentioned: ", strlen("Mentioned: "))) {
                 /* mentioned */
                 sscanf(lineBuffer + strlen("Mentioned "), "%d", &self.characters -> data[characterIndex + CA_MENTIONED].i);
                 self.characters -> data[characterIndex + CA_SIZE].d = log(self.characters -> data[characterIndex + CA_MENTIONED].i + 1) * 4 + 10;
@@ -193,10 +278,9 @@ int32_t loadSquadFile(char *filename) {
             /* description */
             strcat(description, lineBuffer);
             strcat(description, "\n");
-            line++;
         } else {
             /* connection */
-            char *line = lineBuffer + 2; // skip "- "
+            char *line = lineBuffer + strlen("- "); // skip "- "
             int32_t length = strlen(line);
             int32_t found = -1;
             for (int32_t i = 0; i < length; i++) {
@@ -212,9 +296,14 @@ int32_t loadSquadFile(char *filename) {
                 list_append(connections, (unitype) name, 's'); // CO_NAME
                 list_append(connections, (unitype) -1, 'i'); // CO_INDEX
                 list_append(connections, (unitype) description, 's'); // CO_DESCRIPTION
+            } else {
+                list_append(connections, (unitype) line, 's'); // CO_NAME
+                list_append(connections, (unitype) -1, 'i'); // CO_INDEX
+                list_append(connections, (unitype) "NULL", 's'); // CO_DESCRIPTION
             }
         }
     }
+    self.characters -> data[characterIndex + CA_SIZE].d += connections -> length / CO_NUMBER_OF_FIELDS * 10;
     fclose(fp);
     free(lineBuffer);
     return 0;
@@ -246,8 +335,27 @@ void removeOverlap() {
 
 void render() {
     self.mouseHover = -1;
-    /* render connections - TODO */
-
+    /* render connections */
+    turtlePenShape("none");
+    turtlePenSize(self.zoom * 1.2);
+    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+        double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
+        double ypos = (self.characters -> data[characterIndex + CA_YPOS].d + self.screenY) * self.zoom;
+        turtlePenColorAlpha(self.characters -> data[characterIndex + CA_RED].i, self.characters -> data[characterIndex + CA_GREEN].i, self.characters -> data[characterIndex + CA_BLUE].i, 220);
+        for (int32_t connectionIndex = 0; connectionIndex < self.characters -> data[characterIndex + CA_CONNECTIONS].r -> length; connectionIndex += CO_NUMBER_OF_FIELDS) {
+            int32_t index = self.characters -> data[characterIndex + CA_CONNECTIONS].r -> data[connectionIndex + CO_INDEX].i;
+            if (index == -1) {
+                continue;
+            }
+            double cx = (self.characters -> data[index + CA_XPOS].d + self.screenX) * self.zoom;
+            double cy = (self.characters -> data[index + CA_YPOS].d + self.screenY) * self.zoom;
+            turtleGoto(xpos, ypos);
+            turtlePenDown();
+            turtleGoto(cx, cy);
+            turtlePenUp();
+        }
+    }
+    turtlePenShape("circle");
     /* render characters */
     for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
         double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
@@ -258,18 +366,22 @@ void render() {
             self.mouseHover = characterIndex;
         }
         if (characterIndex == self.mouseHover || characterIndex == self.mouseDragging) {
-            turtlePenColor(255, 255, 255);
+            tt_setColor(TT_COLOR_WHITE);
             turtlePenSize(size * 1.05);
             turtleGoto(xpos, ypos);
             turtlePenDown();
             turtlePenUp();
         }
-        turtlePenColor(255, 169, 169);
+        turtlePenColor(self.characters -> data[characterIndex + CA_RED].i, self.characters -> data[characterIndex + CA_GREEN].i, self.characters -> data[characterIndex + CA_BLUE].i);
         turtlePenSize(size);
         turtleGoto(xpos, ypos);
         turtlePenDown();
         turtlePenUp();
-        turtlePenColor(0, 0, 0);
+        if (self.characters -> data[characterIndex + CA_RED].i + self.characters -> data[characterIndex + CA_GREEN].i + self.characters -> data[characterIndex + CA_BLUE].i < 150) {
+            tt_setColor(TT_COLOR_WHITE);
+        } else {
+            tt_setColor(TT_COLOR_BLACK);
+        }
         double textLength = turtleTextGetStringLength(self.characters -> data[characterIndex + CA_NAME].s, size);
         double factor = -0.48493 * log(size / textLength + 1) + 0.99230; // numbers calculated from 0.95 factor for Samburu Warrior, and 0.75 factor for Bix. Using log(size / textLength + 1)x + y
         double textSize = size / textLength * size * factor;
@@ -331,7 +443,7 @@ void mouse() {
 
 int main(int argc, char *argv[]) {
     /* create window */
-    GLFWwindow *window = turtleCreateWindowIcon(TURTLE_WINDOW_DEFAULT_WIDTH, TURTLE_WINDOW_DEFAULT_HEIGHT, "turtle demo", "images/thumbnail.png");
+    GLFWwindow *window = turtleCreateWindowIcon(TURTLE_WINDOW_DEFAULT_WIDTH, TURTLE_WINDOW_DEFAULT_HEIGHT, "Gooniverse", "images/thumbnail.png");
     if (window == NULL) {
         return -1; // failed to create window
     }

@@ -11,3 +11,17 @@ Chris is confirmed to be 9 years old on page 24 of goon squad.
 
 Start at: June 1965, What The Forest Remembers, Lou is 31, (page 129 of Candy House)
 Charlie is 6 years old (page 132 of Candy House)
+
+Start at: October 16th, 2014. Miles hits rock bottom.
+
+
+On Roxy's confusing dates:
+- The beginning of Bright Day says that Roxy dies of an overdose at the age of 57, in 2025 (page 143 of the Candy House). In this chapter we see her obtain the heroin that she overdoses on, but do not witness her death.
+- Roxy alludes to the fact that she was born in 1968, saying "if only I'd been born in 1998 instead of 1968" on page 144 of the Candy House.
+- Roxy then says that her fifty-eighth birthday is next week from this point (page 145)
+- For all of this to be true, her birthday must be sometime in the first week of January. Such that when she dies (which is after this point), it is still 2025.
+
+On Jules' confusing dates:
+- Jules is said to have gone to Riker's island for 5 years before moving in with the Salazars in spring
+- Noreen says Jules moves in and 9 months later Bennie is out
+- 
