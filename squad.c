@@ -599,6 +599,13 @@ void mouse() {
                 turtleGoto(self.selectX, turtle.mouseY);
                 turtleGoto(self.selectX, self.selectY);
                 turtlePenUp();
+                if (fabs(turtle.mouseX - self.selectX) > 1 || fabs(turtle.mouseY - self.selectY) > 1) {
+                    /* unhighlight every node */
+                    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+                        self.characters -> data[characterIndex + CA_HIGHLIGHTED].i = 0;
+                        self.characters -> data[characterIndex + CA_SELECTED].i = 0;
+                    }
+                }
             } else {
                 if (self.mouseDragging >= 0) {
                     self.selectedChangeX = self.anchorX + (turtle.mouseX - self.anchorMouseX) / self.zoom - self.characters -> data[self.mouseDragging + CA_XPOS].d;
