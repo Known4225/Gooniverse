@@ -661,6 +661,11 @@ void mouse() {
     if (turtleMouseDown()) {
         if (self.keys[KEYS_LMB] == 0) {
             /* first tick */
+            turtlePenColorAlpha(0, 0, 0, 254);
+            turtlePenSize(1);
+            turtleGoto(0, 0);
+            turtlePenDown();
+            turtlePenUp();
             self.keys[KEYS_LMB] = 1;
             if (turtle.mouseX < self.sidebarX) {
                 self.anchorMouseX = turtle.mouseX;
@@ -741,6 +746,11 @@ void mouse() {
         }
     } else {
         if (self.keys[KEYS_LMB]) {
+            turtlePenColorAlpha(0, 0, 0, 254);
+            turtlePenSize(1);
+            turtleGoto(0, 0);
+            turtlePenDown();
+            turtlePenUp();
             self.keys[KEYS_LMB] = 0;
             if (fabs(turtle.mouseX - self.anchorMouseX) < 1 && fabs(turtle.mouseY - self.anchorMouseY) < 1) {
                 if (self.mouseDragging < 0) {
@@ -872,6 +882,7 @@ void sidebar() {
             if (turtle.mouseX > self.sidebarX + 5 && turtle.mouseY < ypos + 4.85 && turtle.mouseY > ypos - 4.85) {
                 tt_setColor(TT_COLOR_BACKGROUND_COMPLEMENT);
                 self.searchSelect = self.searchResults -> data[self.searchResults -> length - i * 3 - 2].i;
+                self.biography = self.searchSelect;
             } else {
                 tt_setColor(TT_COLOR_TEXT_ALTERNATE);
             }
