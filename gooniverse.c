@@ -3,7 +3,7 @@ Created by Ryan Srichai, 28.07.26
 
 TODO:
 - Save and load positions
-- Hover popup for characters and connections
+- Hover popup for characters, connections, and groups
 - Algorithm to determine position of nodes (possibly multiple algorithms)
 - Finish all characters and connections
 - Search function
@@ -18,22 +18,23 @@ void removeOverlap();
 
 enum {
     CA_NAME = 0, // only first name (string)
-    CA_DESCRIPTION = 1, // all information in the character file prior to the connections list (string)
-    CA_BIRTHYEAR = 2, // int
-    CA_BIRTHMONTH = 3, // int (1 to 12)
-    CA_BIRTHDAY = 4, // int (1 to 31)
-    CA_MENTIONED = 5, // int
-    CA_CONNECTIONS = 6, // list, see CO_X
-    CA_XPOS = 7, // double
-    CA_YPOS = 8, // double
-    CA_SIZE = 9, // double
-    CA_RED = 10, // int
-    CA_GREEN = 11, // int
-    CA_BLUE = 12, // int
-    CA_GROUPS = 13, // int, bitfield
-    CA_HIGHLIGHTED = 14, // int
-    CA_SELECTED = 15, // int
-    CA_NUMBER_OF_FIELDS = 16,
+    CA_FILENAME = 1, // string
+    CA_DESCRIPTION = 2, // all information in the character file prior to the connections list (string)
+    CA_BIRTHYEAR = 3, // int
+    CA_BIRTHMONTH = 4, // int (1 to 12)
+    CA_BIRTHDAY = 5, // int (1 to 31)
+    CA_MENTIONED = 6, // int
+    CA_CONNECTIONS = 7, // list, see CO_X
+    CA_XPOS = 8, // double
+    CA_YPOS = 9, // double
+    CA_SIZE = 10, // double
+    CA_RED = 11, // int
+    CA_GREEN = 12, // int
+    CA_BLUE = 13, // int
+    CA_GROUPS = 14, // int, bitfield
+    CA_HIGHLIGHTED = 15, // int
+    CA_SELECTED = 16, // int
+    CA_NUMBER_OF_FIELDS = 17,
 };
 
 enum {
@@ -109,14 +110,14 @@ int32_t groupColors[] = {
 
 enum {
     KEYS_LMB,
-    KEYS_RMB,
     KEYS_SPACE,
+    KEYS_S,
 };
 
 typedef struct {
     int8_t keys[32];
-
     list_t *characters; // CA_X
+    char configFile[4096];
 
     /* screen pan and zoom */
     double screenX;
@@ -146,6 +147,10 @@ typedef struct {
     int32_t hoverHistogram; // index of typeHistogram of group being hovered
     list_t *typeHistogram; // TH_X
     int32_t sumQuantity; // total number of group allocations (differs from total number of characters since characters can be in multiple groups)
+
+    /* biography */
+    int32_t biography; // biography character index
+    double biographyX;
 } squad_t;
 
 squad_t self;
@@ -180,8 +185,12 @@ void init() {
         list_append(self.typeHistogram, (unitype) 0, 'i'); // TH_QUANTITY
     }
 
+    /* biography */
+    self.biography = -1;
+    self.biographyX = -190;
+
     /* load files */
-    char *constructedFilepath = malloc(5120);
+    char *constructedFilepath = malloc(4096);
     strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
     strcat(constructedFilepath, "characters");
     list_t *squadFiles = osToolsFileList(constructedFilepath);
@@ -209,6 +218,28 @@ void init() {
                 }
             }
         }
+    }
+    /* load config file */
+    strcpy(self.configFile, osToolsFileDialog.executableFilepath);
+    strcat(self.configFile, "config/positions.txt");
+    FILE *fp = fopen(self.configFile, "r");
+    if (fp == NULL) {
+        printf("Could not find config file: %s\n", self.configFile);
+    } else {
+        char *lineBuffer = malloc(4096);
+        while (fgets(lineBuffer, 4096, fp) != NULL) {
+            char name[256];
+            double x, y;
+            sscanf(lineBuffer, "%s %lf %lf", name, &x, &y);
+            for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+                if (streq(self.characters -> data[characterIndex + CA_NAME].s, name)) {
+                    self.characters -> data[characterIndex + CA_XPOS].d = x;
+                    self.characters -> data[characterIndex + CA_YPOS].d = y;
+                }
+            }
+        }
+        free(lineBuffer);
+        fclose(fp);
     }
     /* run algorithms - TODO */
     removeOverlap();
@@ -250,6 +281,7 @@ int32_t loadSquadFile(char *filename) {
     /* populate character list */
     int32_t characterIndex = self.characters -> length;
     list_append(self.characters, (unitype) firstName, 's'); // CA_NAME
+    list_append(self.characters, (unitype) filename, 's'); // CA_FILENAME
     list_append(self.characters, (unitype) "NULL - to be replaced", 's'); // CA_DESCRIPTION
     list_append(self.characters, (unitype) 1900, 'i'); // CA_BIRTHYEAR
     list_append(self.characters, (unitype) 1, 'i'); // CA_BIRTHMONTH
@@ -316,7 +348,8 @@ int32_t loadSquadFile(char *filename) {
                 double red = 0;
                 double green = 0;
                 double blue = 0;
-                char *line = lineBuffer + strlen("Groups: ");
+                char line[256];
+                strcpy(line, lineBuffer + strlen("Groups: "));
                 char *ptr = strtok(line, ",");
                 while (ptr != NULL) {
                     int32_t groupAdd = -1;
@@ -673,6 +706,26 @@ void mouse() {
     } else {
         self.keys[KEYS_SPACE] = 0;
     }
+    if (turtleKeyPressed(GLFW_KEY_S)) {
+        if (self.keys[KEYS_S] == 0) {
+            self.keys[KEYS_S] = 1;
+            if (turtleKeyPressed(GLFW_KEY_LEFT_CONTROL)) {
+                /* save to config file */
+                FILE *fp = fopen(self.configFile, "w");
+                if (fp == NULL) {
+                    printf("Could not open config file %s\n", self.configFile);
+                } else {
+                    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+                        fprintf(fp, "%s %lf %lf\n", self.characters -> data[characterIndex + CA_NAME].s, self.characters -> data[characterIndex + CA_XPOS].d, self.characters -> data[characterIndex + CA_YPOS].d);
+                    }
+                    fclose(fp);
+                    printf("Successfully saved positions to %s\n", self.configFile);
+                }
+            }
+        }
+    } else {
+        self.keys[KEYS_S] = 0;
+    }
 }
 
 void sidebar() {
@@ -681,7 +734,7 @@ void sidebar() {
     double legendWidth = 80;
     double legendHeight = 200;
     double legendX = (self.sidebarX + 320) / 2 - legendWidth / 2;
-    double legendY = 160;
+    double legendY = 175;
     double ypos = legendY;
     self.hoverHistogram = -1;
     for (int32_t type = 0; type < self.typeHistogram -> length; type += TH_NUMBER_OF_FIELDS) {
@@ -703,6 +756,100 @@ void sidebar() {
     }
 }
 
+void biography() {
+    /* draw sidebar */
+    turtleRectangleColor(self.biographyX, -180, -320, 180, 0, 0, 0, 50);
+    tt_setColor(TT_COLOR_WHITE);
+    if (self.mouseHover >= 0 || self.mouseDragging >= 0 || self.highlighted >= 0 || self.biography >= 0) {
+        if (self.mouseHover >= 0) {
+            self.biography = self.mouseHover;
+        } else if (self.mouseDragging >= 0) {
+            self.biography = self.mouseDragging;
+        } else if (self.highlighted >= 0) {
+            self.biography = self.highlighted;
+        }
+        for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+            if (characterIndex == self.biography) {
+                const double biographyTextSize = 5;
+                /* format biography */
+                double lineLength = self.biographyX + 320 - 10;
+                list_t *lines = list_init();
+                list_append(lines, (unitype) 0, 'i');
+                char *text = self.characters -> data[characterIndex + CA_DESCRIPTION].s;
+                int32_t textLength = strlen(text);
+                /* sweep 1: newlines */
+                for (int32_t i = 0; i < textLength; i++) {
+                    if (text[i] == '\n') {
+                        list_append(lines, (unitype) (i + 1), 'i');
+                    }
+                }
+                list_append(lines, (unitype) textLength, 'i');
+                /* sweep 2: words */
+                for (int32_t lineIndex = 0; lineIndex < lines -> length - 1; lineIndex++) {
+                    char *ptrSaved = text + lines -> data[lineIndex + 1].i;
+                    char saved = *ptrSaved;
+                    *ptrSaved = '\0';
+                    int32_t length = strlen(text + lines -> data[lineIndex].i);
+                    if (turtleTextGetUnicodeLength(text + lines -> data[lineIndex].i, biographyTextSize) > lineLength) {
+                        char *line = text + lines -> data[lineIndex].i;
+                        int32_t index = 0;
+                        int32_t pastIndex = 0;
+                        /* locate next space */
+                        while (index < length + 1) {
+                            if (line[index] == ' ' || index == length) {
+                                char savedInner = line[index];
+                                line[index] = '\0';
+                                if (turtleTextGetUnicodeLength(line, biographyTextSize) > lineLength) {
+                                    if (pastIndex == 0) {
+                                        /* special case: first word was too long to be wrapped - do character wrapping */
+                                        for (int32_t i = 1; i < index + 1; i++) {
+                                            char savedInnerInner = line[i];
+                                            line[i] = '\0';
+                                            if (turtleTextGetUnicodeLength(line, biographyTextSize) > lineLength) {
+                                                if (i == 1) {
+                                                    /* specialer case: first character was too long to be wrapped - wrap it anyway */
+                                                    i = 2;
+                                                }
+                                                list_insert(lines, lineIndex + 1, (unitype) (i - 1 + lines -> data[lineIndex].i), 'i');
+                                                line[i] = savedInnerInner;
+                                                break;
+                                            }
+                                            line[i] = savedInnerInner;
+                                        }
+                                    } else {
+                                        list_insert(lines, lineIndex + 1, (unitype) (pastIndex + lines -> data[lineIndex].i), 'i');
+                                    }
+                                    // lineIndex++;
+                                    line[index] = savedInner;
+                                    break;
+                                }
+                                pastIndex = index + 1;
+                                line[index] = savedInner;
+                            }
+                            index++;
+                        }
+                    }
+                    *ptrSaved = saved;
+                }
+                /* draw commands */
+                double ypos = 172;
+                for (int32_t lineIndex = 0; lineIndex < lines -> length - 1; lineIndex++) {
+                    char saved = *(text + lines -> data[lineIndex + 1].i);
+                    *(text + lines -> data[lineIndex + 1].i) = '\0';
+                    turtleTextWriteUnicode(text + lines -> data[lineIndex].i, -315, ypos, biographyTextSize, 0);
+                    *(text + lines -> data[lineIndex + 1].i) = saved;
+                    ypos -= 8;
+                }
+                list_free(lines);
+            }
+        }
+    } else {
+        turtleTextWriteString("Hover over a", (-320 + self.biographyX) / 2, 12, 8, 50);
+        turtleTextWriteString("a character to", (-320 + self.biographyX) / 2, 0, 8, 50);
+        turtleTextWriteString("see biography", (-320 + self.biographyX) / 2, -12, 8, 50);
+    }
+}
+
 int main(int argc, char *argv[]) {
     /* create window */
     GLFWwindow *window = turtleCreateWindowIcon(TURTLE_WINDOW_DEFAULT_WIDTH, TURTLE_WINDOW_DEFAULT_HEIGHT, "Gooniverse", "images/thumbnail.png");
@@ -720,7 +867,7 @@ int main(int argc, char *argv[]) {
     osToolsFileDialogAddGlobalExtension("csv"); // add csv to extension restrictions
 
     /* initialise turtleText */
-    char *constructedFilepath = malloc(5120);
+    char *constructedFilepath = malloc(4096);
     strcpy(constructedFilepath, osToolsFileDialog.executableFilepath);
     strcat(constructedFilepath, "config/roberto.tgl");
     turtleTextInit(constructedFilepath);
@@ -740,6 +887,7 @@ int main(int argc, char *argv[]) {
         render();
         mouse();
         sidebar();
+        biography();
         turtleToolsUpdate(); // update turtleTools
         tt_setColor(TT_COLOR_TEXT);
         turtleTextWriteStringf(-310, -170, 5, 0, "%.2lf, %.2lf", turtle.mouseX, turtle.mouseY);
