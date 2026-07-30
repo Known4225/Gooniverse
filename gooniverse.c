@@ -2,11 +2,10 @@
 Created by Ryan Srichai, 28.07.26
 
 TODO:
-- Add Bix's family as a group
 - Show connection explanations
 - Show little icon if the character has their own chapter
 - Algorithm to determine position of nodes (possibly multiple algorithms)
-- Finish all characters and connections
+- Finish all characters biographies and connections
 */
 
 #include "turtle.h"
@@ -72,6 +71,7 @@ char groups[][64] = {
     "Lou's Family",
     "Ted's Family",
     "Bennie's Family",
+    "Bix's Family",
     "Columbia Group",
     "Safari",
     "SweetSpot Networks",
@@ -86,11 +86,12 @@ enum {
     GROUP_LOUS_FAMILY = 3,
     GROUP_TEDS_FAMILY = 4,
     GROUP_BENNIES_FAMILY = 5,
-    GROUP_COLUMBIA_GROUP = 6,
-    GROUP_SAFARI = 7,
-    GROUP_SWEETSPOT_NETWORKS = 8,
-    GROUP_COUNTRY_X = 9,
-    GROUP_NO_GROUP = 10,
+    GROUP_BIXS_FAMILY = 6,
+    GROUP_COLUMBIA_GROUP = 7,
+    GROUP_SAFARI = 8,
+    GROUP_SWEETSPOT_NETWORKS = 9,
+    GROUP_COUNTRY_X = 10,
+    GROUP_NO_GROUP = 11,
 };
 
 /* TODO - try using the colors from the cover of the book */
@@ -101,6 +102,7 @@ int32_t groupColors[] = {
     255, 171, 0, // Lou's Family
     150, 70, 51, // Ted's Family
     236, 16, 236, // Bennie's Family
+    142, 75, 245, // Bix's Family
     65, 129, 112, // Columbia Group
     121, 134, 102, // Safari
     16, 37, 116, // SweetSpot Networks
