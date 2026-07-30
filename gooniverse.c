@@ -2,6 +2,7 @@
 Created by Ryan Srichai, 28.07.26
 
 TODO:
+- Show connection explanations
 - Algorithm to determine position of nodes (possibly multiple algorithms)
 - Finish all characters and connections
 - Search function
@@ -69,10 +70,10 @@ char groups[][64] = {
     "Crandale Country Club",
     "Lou's Family",
     "Ted's Family",
+    "Bennie's Family",
     "Columbia Group",
     "Safari",
     "SweetSpot Networks",
-    "Bennie's Family",
     "Country X",
     "No Group",
 };
@@ -83,10 +84,10 @@ enum {
     GROUP_CRANDALE_COUNTRY_CLUB = 2,
     GROUP_LOUS_FAMILY = 3,
     GROUP_TEDS_FAMILY = 4,
-    GROUP_COLUMBIA_GROUP = 5,
-    GROUP_SAFARI = 6,
-    GROUP_SWEETSPOT_NETWORKS = 7,
-    GROUP_BENNIES_FAMILY = 8,
+    GROUP_BENNIES_FAMILY = 5,
+    GROUP_COLUMBIA_GROUP = 6,
+    GROUP_SAFARI = 7,
+    GROUP_SWEETSPOT_NETWORKS = 8,
     GROUP_COUNTRY_X = 9,
     GROUP_NO_GROUP = 10,
 };
@@ -98,10 +99,10 @@ int32_t groupColors[] = {
     88, 159, 76, // Crandale Country Club
     255, 171, 0, // Lou's Family
     150, 70, 51, // Ted's Family
+    236, 16, 236, // Bennie's Family
     65, 129, 112, // Columbia Group
     121, 134, 102, // Safari
     16, 37, 116, // SweetSpot Networks
-    236, 16, 236, // Bennie's Family
     38, 164, 186, // Country X
     255, 169, 169, // No Group
 };
@@ -308,8 +309,8 @@ int32_t loadSquadFile(char *filename) {
             lineBuffer[strlen(lineBuffer) - 1] = '\0';
         }
         if (streq(lineBuffer, "# Connections")) {
-            free(self.characters -> data[characterIndex + CA_DESCRIPTION].s);
-            self.characters -> data[characterIndex + CA_DESCRIPTION].s = description;
+            strcat(description, "Connections:");
+            strcat(description, "\n");
             mode = 1;
             if (numberOfGroups == 0) {
                 self.characters -> data[characterIndex + CA_GROUPS].i |= 1 << GROUP_NO_GROUP;
@@ -382,9 +383,6 @@ int32_t loadSquadFile(char *filename) {
                 sscanf(lineBuffer + strlen("Mentioned "), "%d", &self.characters -> data[characterIndex + CA_MENTIONED].i);
                 self.characters -> data[characterIndex + CA_SIZE].d = log(self.characters -> data[characterIndex + CA_MENTIONED].i + 1) * 4 + 10;
             }
-            /* description */
-            strcat(description, lineBuffer);
-            strcat(description, "\n");
         } else {
             /* connection */
             char *line = lineBuffer + strlen("- "); // skip "- "
@@ -403,13 +401,19 @@ int32_t loadSquadFile(char *filename) {
                 list_append(connections, (unitype) name, 's'); // CO_NAME
                 list_append(connections, (unitype) -1, 'i'); // CO_INDEX
                 list_append(connections, (unitype) description, 's'); // CO_DESCRIPTION
+                name[found] = ',';
             } else {
                 list_append(connections, (unitype) line, 's'); // CO_NAME
                 list_append(connections, (unitype) -1, 'i'); // CO_INDEX
                 list_append(connections, (unitype) "NULL", 's'); // CO_DESCRIPTION
             }
         }
+        /* description */
+        strcat(description, lineBuffer);
+        strcat(description, "\n");
     }
+    free(self.characters -> data[characterIndex + CA_DESCRIPTION].s);
+    self.characters -> data[characterIndex + CA_DESCRIPTION].s = description;
     self.characters -> data[characterIndex + CA_SIZE].d += connections -> length / CO_NUMBER_OF_FIELDS * 10;
     fclose(fp);
     free(lineBuffer);
@@ -702,14 +706,18 @@ void mouse() {
         }
     }
     double scroll = turtleMouseWheel();
+    double scrollAmount = self.scrollSpeed;
+    if (turtleKeyPressed(GLFW_KEY_LEFT_SHIFT)) {
+        scrollAmount = (self.scrollSpeed - 1) / 10 + 1;
+    }
     if (scroll > 0) {
-        self.screenX -= (turtle.mouseX * (-1 / self.scrollSpeed + 1)) / self.zoom;
-        self.screenY -= (turtle.mouseY * (-1 / self.scrollSpeed + 1)) / self.zoom;
-        self.zoom *= self.scrollSpeed;
+        self.screenX -= (turtle.mouseX * (-1 / scrollAmount + 1)) / self.zoom;
+        self.screenY -= (turtle.mouseY * (-1 / scrollAmount + 1)) / self.zoom;
+        self.zoom *= scrollAmount;
     } else if (scroll < 0) {
-        self.zoom /= self.scrollSpeed;
-        self.screenX += (turtle.mouseX * (-1 / self.scrollSpeed + 1)) / self.zoom;
-        self.screenY += (turtle.mouseY * (-1 / self.scrollSpeed + 1)) / self.zoom;
+        self.zoom /= scrollAmount;
+        self.screenX += (turtle.mouseX * (-1 / scrollAmount + 1)) / self.zoom;
+        self.screenY += (turtle.mouseY * (-1 / scrollAmount + 1)) / self.zoom;
     }
     if (turtleKeyPressed(GLFW_KEY_SPACE)) {
         if (self.keys[KEYS_SPACE] == 0) {
@@ -839,7 +847,18 @@ void biography() {
                 for (int32_t lineIndex = 0; lineIndex < lines -> length - 1; lineIndex++) {
                     char saved = *(text + lines -> data[lineIndex + 1].i);
                     *(text + lines -> data[lineIndex + 1].i) = '\0';
-                    turtleTextWriteUnicode(text + lines -> data[lineIndex].i, -315, ypos, biographyTextSize, 0);
+                    if (lineIndex == 0) {
+                        /* special case: title */
+                        ypos -= 4;
+                        turtleTextWriteUnicode(text + lines -> data[lineIndex].i, -315, ypos, biographyTextSize * 1.5, 0);
+                        ypos -= 5;
+                    } else if (strncmp(text + lines -> data[lineIndex].i, "Connections:", strlen("Connections:")) == 0) {
+                        ypos -= 4;
+                        turtleTextWriteStringf(-315, ypos, biographyTextSize * 1.5, 0, "Connections (%d):", self.characters -> data[characterIndex + CA_CONNECTIONS].r -> length / CO_NUMBER_OF_FIELDS);
+                        ypos -= 5;
+                    } else {
+                        turtleTextWriteUnicode(text + lines -> data[lineIndex].i, -315, ypos, biographyTextSize, 0);
+                    }
                     *(text + lines -> data[lineIndex + 1].i) = saved;
                     ypos -= 8;
                 }
