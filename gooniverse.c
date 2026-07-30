@@ -3,6 +3,7 @@ Created by Ryan Srichai, 28.07.26
 
 TODO:
 - Show connection explanations
+- Show little icon if the character has their own chapter
 - Algorithm to determine position of nodes (possibly multiple algorithms)
 - Finish all characters and connections
 - Search function
@@ -252,6 +253,13 @@ int8_t streq(const char *str1, const char *str2) {
     return 0;
 }
 
+double minUser(double a, double b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
 int32_t loadSquadFile(char *filename) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
@@ -361,9 +369,9 @@ int32_t loadSquadFile(char *filename) {
                     }
                     if (groupAdd != -1) {
                         /* https://www.reddit.com/r/roguelikedev/comments/eyn7sr/how_to_mix_two_colour_lights */
-                        red = min(sqrt(red * red + groupColors[groupAdd * 3 + 0] * groupColors[groupAdd * 3 + 0]), 255);
-                        green = min(sqrt(green * green + groupColors[groupAdd * 3 + 1] * groupColors[groupAdd * 3 + 1]), 255);
-                        blue = min(sqrt(blue * blue + groupColors[groupAdd * 3 + 2] * groupColors[groupAdd * 3 + 2]), 255);
+                        red = minUser(sqrt(red * red + groupColors[groupAdd * 3 + 0] * groupColors[groupAdd * 3 + 0]), 255);
+                        green = minUser(sqrt(green * green + groupColors[groupAdd * 3 + 1] * groupColors[groupAdd * 3 + 1]), 255);
+                        blue = minUser(sqrt(blue * blue + groupColors[groupAdd * 3 + 2] * groupColors[groupAdd * 3 + 2]), 255);
                         self.characters -> data[characterIndex + CA_GROUPS].i |= 1 << groupAdd;
                         self.typeHistogram -> data[groupAdd * TH_NUMBER_OF_FIELDS + TH_QUANTITY].i++;
                         numberOfGroups++;
