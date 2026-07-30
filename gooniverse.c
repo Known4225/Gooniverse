@@ -246,7 +246,7 @@ void init() {
         list_free(config);
     }
     /* run algorithms - TODO */
-    removeOverlap();
+    // removeOverlap();
 }
 
 int8_t streq(const char *str1, const char *str2) {
