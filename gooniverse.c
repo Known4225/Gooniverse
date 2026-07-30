@@ -112,6 +112,7 @@ enum {
     KEYS_LMB,
     KEYS_SPACE,
     KEYS_S,
+    KEYS_H,
 };
 
 typedef struct {
@@ -141,6 +142,7 @@ typedef struct {
     double selectedChangeX;
     double selectedChangeY;
     int8_t selectRelease;
+    int8_t showConnections;
 
     /* sidebar */
     double sidebarX;
@@ -174,6 +176,7 @@ void init() {
     self.selectedChangeX = 0;
     self.selectedChangeY = 0;
     self.selectRelease = 0;
+    self.showConnections = 1;
 
     /* sidebar */
     self.sidebarX = 230;
@@ -506,26 +509,28 @@ void render() {
         }
     }
     /* render connections */
-    turtlePenShape("none");
-    turtlePenSize(self.zoom * 1.2);
-    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
-        double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
-        double ypos = (self.characters -> data[characterIndex + CA_YPOS].d + self.screenY) * self.zoom;
-        turtlePenColorAlpha(self.characters -> data[characterIndex + CA_RED].i, self.characters -> data[characterIndex + CA_GREEN].i, self.characters -> data[characterIndex + CA_BLUE].i, 230);
-        for (int32_t connectionIndex = 0; connectionIndex < self.characters -> data[characterIndex + CA_CONNECTIONS].r -> length; connectionIndex += CO_NUMBER_OF_FIELDS) {
-            int32_t index = self.characters -> data[characterIndex + CA_CONNECTIONS].r -> data[connectionIndex + CO_INDEX].i;
-            if (index == -1) {
-                continue;
+    if (self.showConnections) {
+        turtlePenShape("none");
+        turtlePenSize(self.zoom * 1.2);
+        for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+            double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
+            double ypos = (self.characters -> data[characterIndex + CA_YPOS].d + self.screenY) * self.zoom;
+            turtlePenColorAlpha(self.characters -> data[characterIndex + CA_RED].i, self.characters -> data[characterIndex + CA_GREEN].i, self.characters -> data[characterIndex + CA_BLUE].i, 230);
+            for (int32_t connectionIndex = 0; connectionIndex < self.characters -> data[characterIndex + CA_CONNECTIONS].r -> length; connectionIndex += CO_NUMBER_OF_FIELDS) {
+                int32_t index = self.characters -> data[characterIndex + CA_CONNECTIONS].r -> data[connectionIndex + CO_INDEX].i;
+                if (index == -1) {
+                    continue;
+                }
+                double cx = (self.characters -> data[index + CA_XPOS].d + self.screenX) * self.zoom;
+                double cy = (self.characters -> data[index + CA_YPOS].d + self.screenY) * self.zoom;
+                turtleGoto(xpos, ypos);
+                turtlePenDown();
+                turtleGoto(cx, cy);
+                turtlePenUp();
             }
-            double cx = (self.characters -> data[index + CA_XPOS].d + self.screenX) * self.zoom;
-            double cy = (self.characters -> data[index + CA_YPOS].d + self.screenY) * self.zoom;
-            turtleGoto(xpos, ypos);
-            turtlePenDown();
-            turtleGoto(cx, cy);
-            turtlePenUp();
         }
+        turtlePenShape("circle");
     }
-    turtlePenShape("circle");
     /* render characters */
     if (self.mouseDragging < 0) {
         for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
@@ -744,6 +749,18 @@ void mouse() {
         }
     } else {
         self.keys[KEYS_S] = 0;
+    }
+    if (turtleKeyPressed(GLFW_KEY_H)) {
+        if (self.keys[KEYS_H] == 0) {
+            self.keys[KEYS_H] = 1;
+            if (self.showConnections) {
+                self.showConnections = 0;
+            } else {
+                self.showConnections = 1;
+            }
+        }
+    } else {
+        self.keys[KEYS_H] = 0;
     }
 }
 
