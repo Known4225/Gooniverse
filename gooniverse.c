@@ -2,11 +2,11 @@
 Created by Ryan Srichai, 28.07.26
 
 TODO:
+- Add Bix's family as a group
 - Show connection explanations
 - Show little icon if the character has their own chapter
 - Algorithm to determine position of nodes (possibly multiple algorithms)
 - Finish all characters and connections
-- Search function
 */
 
 #include "turtle.h"
@@ -149,6 +149,8 @@ typedef struct {
     int32_t hoverHistogram; // index of typeHistogram of group being hovered
     list_t *typeHistogram; // TH_X
     int32_t sumQuantity; // total number of group allocations (differs from total number of characters since characters can be in multiple groups)
+    tt_textbox_t *searchBox;
+    int32_t searchSelect;
 
     /* biography */
     int32_t biography; // biography character index
@@ -182,6 +184,9 @@ void init() {
     self.sidebarX = 230;
     self.hoverHistogram = -1;
     self.sumQuantity = 0;
+    self.searchBox = tt_textboxInit("Search", NULL, 64, self.sidebarX + 5, -40, 8, 320 - self.sidebarX - 10);
+    self.searchSelect = -1;
+    self.searchBox -> color[TT_COLOR_SLOT_TEXTBOX_BOX] = TT_COLOR_COMPONENT_ALTERNATE;
     self.typeHistogram = list_init();
     for (int32_t group = 0; group < sizeof(groups) / sizeof(groups[0]); group++) {
         list_append(self.typeHistogram, (unitype) group, 'i'); // TH_INDEX
@@ -256,11 +261,53 @@ int8_t streq(const char *str1, const char *str2) {
     return 0;
 }
 
-double minUser(double a, double b) {
+double minDouble(double a, double b) {
     if (a < b) {
         return a;
     }
     return b;
+}
+
+double minTriple(double a, double b, double c) {
+    if (a < b) {
+        if (a < c) {
+            return a;
+        }
+        if (b < c) {
+            return b;
+        }
+        return c;
+    }
+    if (b < c) {
+        return b;
+    }
+    return c;
+}
+
+int32_t editDistance(const char *str1, const char *str2) {
+    /* Wagner-Fischer algorithm */
+    int32_t len1 = strlen(str1) + 1;
+    int32_t len2 = strlen(str2) + 1;
+    int32_t *matrix = malloc(len1 * len2 * sizeof(int32_t));
+    for (int32_t i = 0; i < len1; i++) {
+        matrix[i] = i;
+    }
+    for (int32_t i = 0; i < len2; i++) {
+        matrix[len1 * i] = i;
+    }
+    for (int32_t i = 1; i < len1; i++) {
+        for (int32_t j = 1; j < len2; j++) {
+            if (str1[i - 1] == str2[j - 1]) {
+                matrix[j * len1 + i] = minTriple(matrix[j * len1 + i - 1] + 1, matrix[(j - 1) * len1 + i] + 1, matrix[(j - 1) * len1 + i - 1]);
+            } else {
+                matrix[j * len1 + i] = minTriple(matrix[j * len1 + i - 1] + 1, matrix[(j - 1) * len1 + i] + 1, matrix[(j - 1) * len1 + i - 1] + 1);
+            }
+        }
+    }
+    int32_t output = matrix[len1 * len2 - 1];
+    free(matrix);
+    // printf("edit distance between %s and %s: %d\n", str1, str2, output);
+    return output;
 }
 
 int32_t loadSquadFile(char *filename) {
@@ -372,9 +419,9 @@ int32_t loadSquadFile(char *filename) {
                     }
                     if (groupAdd != -1) {
                         /* https://www.reddit.com/r/roguelikedev/comments/eyn7sr/how_to_mix_two_colour_lights */
-                        red = minUser(sqrt(red * red + groupColors[groupAdd * 3 + 0] * groupColors[groupAdd * 3 + 0]), 255);
-                        green = minUser(sqrt(green * green + groupColors[groupAdd * 3 + 1] * groupColors[groupAdd * 3 + 1]), 255);
-                        blue = minUser(sqrt(blue * blue + groupColors[groupAdd * 3 + 2] * groupColors[groupAdd * 3 + 2]), 255);
+                        red = minDouble(sqrt(red * red + groupColors[groupAdd * 3 + 0] * groupColors[groupAdd * 3 + 0]), 255);
+                        green = minDouble(sqrt(green * green + groupColors[groupAdd * 3 + 1] * groupColors[groupAdd * 3 + 1]), 255);
+                        blue = minDouble(sqrt(blue * blue + groupColors[groupAdd * 3 + 2] * groupColors[groupAdd * 3 + 2]), 255);
                         self.characters -> data[characterIndex + CA_GROUPS].i |= 1 << groupAdd;
                         self.typeHistogram -> data[groupAdd * TH_NUMBER_OF_FIELDS + TH_QUANTITY].i++;
                         numberOfGroups++;
@@ -532,7 +579,7 @@ void render() {
         turtlePenShape("circle");
     }
     /* render characters */
-    if (self.mouseDragging < 0) {
+    if (self.mouseDragging < 0 && turtle.mouseX < self.sidebarX && turtle.mouseX > self.biographyX) {
         for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
             double xpos = (self.characters -> data[characterIndex + CA_XPOS].d + self.screenX) * self.zoom;
             double ypos = (self.characters -> data[characterIndex + CA_YPOS].d + self.screenY) * self.zoom;
@@ -647,6 +694,11 @@ void mouse() {
                             self.highlighted = characterIndex;
                         }
                     }
+                } else if (self.searchSelect != -1) {
+                    /* go to searchSelect character */
+                    self.screenX = -self.characters -> data[self.searchSelect + CA_XPOS].d;
+                    self.screenY = -self.characters -> data[self.searchSelect + CA_YPOS].d;
+                    self.zoom = 50 / self.characters -> data[self.searchSelect + CA_SIZE].d;
                 }
             }
         } else {
@@ -732,7 +784,7 @@ void mouse() {
         self.screenX += (turtle.mouseX * (-1 / scrollAmount + 1)) / self.zoom;
         self.screenY += (turtle.mouseY * (-1 / scrollAmount + 1)) / self.zoom;
     }
-    if (turtleKeyPressed(GLFW_KEY_SPACE)) {
+    if (turtleKeyPressed(GLFW_KEY_SPACE) && self.searchBox -> status == TT_STATUS_IDLE) {
         if (self.keys[KEYS_SPACE] == 0) {
             self.keys[KEYS_SPACE] = 1;
             removeOverlap();
@@ -740,7 +792,7 @@ void mouse() {
     } else {
         self.keys[KEYS_SPACE] = 0;
     }
-    if (turtleKeyPressed(GLFW_KEY_S)) {
+    if (turtleKeyPressed(GLFW_KEY_S) && self.searchBox -> status == TT_STATUS_IDLE) {
         if (self.keys[KEYS_S] == 0) {
             self.keys[KEYS_S] = 1;
             if (turtleKeyPressed(GLFW_KEY_LEFT_CONTROL)) {
@@ -750,7 +802,7 @@ void mouse() {
     } else {
         self.keys[KEYS_S] = 0;
     }
-    if (turtleKeyPressed(GLFW_KEY_H)) {
+    if (turtleKeyPressed(GLFW_KEY_H) && self.searchBox -> status == TT_STATUS_IDLE) {
         if (self.keys[KEYS_H] == 0) {
             self.keys[KEYS_H] = 1;
             if (self.showConnections) {
@@ -767,6 +819,7 @@ void mouse() {
 void sidebar() {
     /* draw sidebar */
     turtleRectangleColor(self.sidebarX, -180, 320, 180, 0, 0, 0, 50);
+    /* draw legend */
     double legendWidth = 80;
     double legendHeight = 200;
     double legendX = (self.sidebarX + 320) / 2 - legendWidth / 2;
@@ -790,11 +843,36 @@ void sidebar() {
             turtleTextWriteString(groups[self.typeHistogram -> data[type + TH_INDEX].i], legendX + legendWidth / 2, (saveY + ypos) / 2, 5, 50);
         }
     }
+    /* search - use (edit distance / length) as a search heuristic - TODO change the heuristic to prioritise the beginning of a name */
+    self.searchSelect = -1;
+    int32_t searchLength = strlen(self.searchBox -> text);
+    if (searchLength > 0) {
+        list_t *results = list_init();
+        for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+            list_append(results, self.characters -> data[characterIndex + CA_NAME], 's');
+            list_append(results, (unitype) characterIndex, 'i');
+            list_append(results, (unitype) (int32_t) ((double) editDistance(self.searchBox -> text, self.characters -> data[characterIndex + CA_NAME].s) / strlen(self.characters -> data[characterIndex + CA_NAME].s) * 1000), 'i');
+        }
+        list_sort_stride(results, 3, 2);
+        double ypos = -55;
+        for (int32_t i = 0; i < 13; i++) {
+            if (turtle.mouseX > self.sidebarX + 5 && turtle.mouseY < ypos + 4.85 && turtle.mouseY > ypos - 4.85) {
+                tt_setColor(TT_COLOR_BACKGROUND_COMPLEMENT);
+                self.searchSelect = results -> data[results -> length - i * 3 - 2].i;
+            } else {
+                tt_setColor(TT_COLOR_TEXT_ALTERNATE);
+            }
+            turtleTextWriteString(results -> data[results -> length - i * 3 - 3].s, self.sidebarX + 10, ypos, 6, 0);
+            ypos -= 9.7;
+        }
+        list_free(results);
+    }
 }
 
 void biography() {
     /* draw sidebar */
     turtleRectangleColor(self.biographyX, -180, -320, 180, 0, 0, 0, 50);
+    /* draw biography */
     tt_setColor(TT_COLOR_WHITE);
     if (self.mouseHover >= 0 || self.mouseDragging >= 0 || self.highlighted >= 0 || self.biography >= 0) {
         if (self.mouseHover >= 0) {
