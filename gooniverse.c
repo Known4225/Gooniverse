@@ -152,7 +152,9 @@ typedef struct {
     list_t *typeHistogram; // TH_X
     int32_t sumQuantity; // total number of group allocations (differs from total number of characters since characters can be in multiple groups)
     tt_textbox_t *searchBox;
+    list_t *searchResults;
     int32_t searchSelect;
+    int32_t searchHash;
 
     /* biography */
     int32_t biography; // biography character index
@@ -187,7 +189,9 @@ void init() {
     self.hoverHistogram = -1;
     self.sumQuantity = 0;
     self.searchBox = tt_textboxInit("Search", NULL, 64, self.sidebarX + 5, -40, 8, 320 - self.sidebarX - 10);
+    self.searchResults = list_init();
     self.searchSelect = -1;
+    self.searchHash = 0;
     self.searchBox -> color[TT_COLOR_SLOT_TEXTBOX_BOX] = TT_COLOR_COMPONENT_ALTERNATE;
     self.typeHistogram = list_init();
     for (int32_t group = 0; group < sizeof(groups) / sizeof(groups[0]); group++) {
@@ -848,26 +852,32 @@ void sidebar() {
     /* search - use (edit distance / length) as a search heuristic - TODO change the heuristic to prioritise the beginning of a name */
     self.searchSelect = -1;
     int32_t searchLength = strlen(self.searchBox -> text);
+    int32_t hash = 0;
+    for (int32_t i = 0; i < searchLength; i++) {
+        hash += self.searchBox -> text[i];
+    }
     if (searchLength > 0) {
-        list_t *results = list_init();
-        for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
-            list_append(results, self.characters -> data[characterIndex + CA_NAME], 's');
-            list_append(results, (unitype) characterIndex, 'i');
-            list_append(results, (unitype) (int32_t) ((double) editDistance(self.searchBox -> text, self.characters -> data[characterIndex + CA_NAME].s) / strlen(self.characters -> data[characterIndex + CA_NAME].s) * 1000), 'i');
+        if (self.searchHash != hash) {
+            self.searchHash = hash;
+            list_clear(self.searchResults);
+            for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+                list_append(self.searchResults, self.characters -> data[characterIndex + CA_NAME], 's');
+                list_append(self.searchResults, (unitype) characterIndex, 'i');
+                list_append(self.searchResults, (unitype) (int32_t) ((double) editDistance(self.searchBox -> text, self.characters -> data[characterIndex + CA_NAME].s) / strlen(self.characters -> data[characterIndex + CA_NAME].s) * 1000), 'i');
+            }
+            list_sort_stride(self.searchResults, 3, 2);
         }
-        list_sort_stride(results, 3, 2);
         double ypos = -55;
         for (int32_t i = 0; i < 13; i++) {
             if (turtle.mouseX > self.sidebarX + 5 && turtle.mouseY < ypos + 4.85 && turtle.mouseY > ypos - 4.85) {
                 tt_setColor(TT_COLOR_BACKGROUND_COMPLEMENT);
-                self.searchSelect = results -> data[results -> length - i * 3 - 2].i;
+                self.searchSelect = self.searchResults -> data[self.searchResults -> length - i * 3 - 2].i;
             } else {
                 tt_setColor(TT_COLOR_TEXT_ALTERNATE);
             }
-            turtleTextWriteString(results -> data[results -> length - i * 3 - 3].s, self.sidebarX + 10, ypos, 6, 0);
+            turtleTextWriteString(self.searchResults -> data[self.searchResults -> length - i * 3 - 3].s, self.sidebarX + 10, ypos, 6, 0);
             ypos -= 9.7;
         }
-        list_free(results);
     }
 }
 
