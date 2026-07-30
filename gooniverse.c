@@ -220,24 +220,25 @@ void init() {
     /* load config file */
     strcpy(self.configFile, osToolsFileDialog.executableFilepath);
     strcat(self.configFile, "config/positions.txt");
-    FILE *fp = fopen(self.configFile, "r");
-    if (fp == NULL) {
+    list_t *config = osToolsLoadCSVString(self.configFile, OSTOOLS_CSV_ROW);
+    if (config == NULL) {
         printf("Could not find config file: %s\n", self.configFile);
     } else {
-        char *lineBuffer = malloc(4096);
-        while (fgets(lineBuffer, 4096, fp) != NULL) {
-            char name[256];
+        for (int32_t i = 0; i < config -> length; i++) {
+            if (config -> data[i].r -> length < 3) {
+                continue;
+            }
             double x, y;
-            sscanf(lineBuffer, "%s %lf %lf", name, &x, &y);
+            sscanf(config -> data[i].r -> data[1].s, "%lf", &x);
+            sscanf(config -> data[i].r -> data[2].s, "%lf", &y);
             for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
-                if (streq(self.characters -> data[characterIndex + CA_NAME].s, name) || (strcmp(name, "M") == 0 && strcmp(self.characters -> data[characterIndex + CA_NAME].s, " M ") == 0)) {
+                if (streq(self.characters -> data[characterIndex + CA_NAME].s, config -> data[i].r -> data[0].s)) {
                     self.characters -> data[characterIndex + CA_XPOS].d = x;
                     self.characters -> data[characterIndex + CA_YPOS].d = y;
                 }
             }
         }
-        free(lineBuffer);
-        fclose(fp);
+        list_free(config);
     }
     /* run algorithms - TODO */
     removeOverlap();
@@ -413,6 +414,20 @@ int32_t loadSquadFile(char *filename) {
     fclose(fp);
     free(lineBuffer);
     return 0;
+}
+
+void saveConfigFile() {
+    /* save to config file */
+    FILE *fp = fopen(self.configFile, "w");
+    if (fp == NULL) {
+        printf("Could not open config file %s\n", self.configFile);
+    } else {
+        for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
+            fprintf(fp, "%s, %lf, %lf\n", self.characters -> data[characterIndex + CA_NAME].s, self.characters -> data[characterIndex + CA_XPOS].d, self.characters -> data[characterIndex + CA_YPOS].d);
+        }
+        fclose(fp);
+        printf("Successfully saved positions to %s\n", self.configFile);
+    }
 }
 
 void removeOverlap() {
@@ -708,17 +723,7 @@ void mouse() {
         if (self.keys[KEYS_S] == 0) {
             self.keys[KEYS_S] = 1;
             if (turtleKeyPressed(GLFW_KEY_LEFT_CONTROL)) {
-                /* save to config file */
-                FILE *fp = fopen(self.configFile, "w");
-                if (fp == NULL) {
-                    printf("Could not open config file %s\n", self.configFile);
-                } else {
-                    for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
-                        fprintf(fp, "%s %lf %lf\n", self.characters -> data[characterIndex + CA_NAME].s, self.characters -> data[characterIndex + CA_XPOS].d, self.characters -> data[characterIndex + CA_YPOS].d);
-                    }
-                    fclose(fp);
-                    printf("Successfully saved positions to %s\n", self.configFile);
-                }
+                saveConfigFile();
             }
         }
     } else {
@@ -895,6 +900,7 @@ int main(int argc, char *argv[]) {
             end = clock();
         }
     }
+    saveConfigFile();
     turtleFree();
     glfwTerminate();
     return 0;
