@@ -2,8 +2,6 @@
 Created by Ryan Srichai, 28.07.26
 
 TODO:
-- Save and load positions
-- Hover popup for characters, connections, and groups
 - Algorithm to determine position of nodes (possibly multiple algorithms)
 - Finish all characters and connections
 - Search function
@@ -232,7 +230,7 @@ void init() {
             double x, y;
             sscanf(lineBuffer, "%s %lf %lf", name, &x, &y);
             for (int32_t characterIndex = 0; characterIndex < self.characters -> length; characterIndex += CA_NUMBER_OF_FIELDS) {
-                if (streq(self.characters -> data[characterIndex + CA_NAME].s, name)) {
+                if (streq(self.characters -> data[characterIndex + CA_NAME].s, name) || (strcmp(name, "M") == 0 && strcmp(self.characters -> data[characterIndex + CA_NAME].s, " M ") == 0)) {
                     self.characters -> data[characterIndex + CA_XPOS].d = x;
                     self.characters -> data[characterIndex + CA_YPOS].d = y;
                 }
