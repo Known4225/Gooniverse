@@ -167,9 +167,9 @@ void init() {
     self.characters = list_init();
 
     /* screen pan and zoom */
-    self.screenX = 0;
-    self.screenY = 0;
-    self.zoom = 0.23;
+    self.screenX = 300;
+    self.screenY = -25;
+    self.zoom = 0.185;
     self.scrollSpeed = 1.15;
 
     /* character and screen dragging */
@@ -201,7 +201,7 @@ void init() {
 
     /* biography */
     self.biography = -1;
-    self.biographyX = -190;
+    self.biographyX = -100;
 
     /* load files */
     char *constructedFilepath = malloc(4096);
